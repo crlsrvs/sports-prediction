@@ -1,0 +1,52 @@
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.brandRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.brand {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+  color: var(--color-accent);
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.nav a {
+  color: var(--color-muted);
+  text-decoration: none;
+}
+
+.nav a:hover {
+  color: var(--color-text);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0.75rem 0 0;
+  max-width: 42rem;
+  color: var(--color-muted);
+  line-height: 1.5;
+}

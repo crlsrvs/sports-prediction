@@ -1,0 +1,97 @@
+.panel {
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-surface);
+}
+
+.backLink {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.header {
+  margin: 1rem 0 1.5rem;
+}
+
+.competition,
+.meta,
+.message {
+  color: var(--color-muted);
+}
+
+.title {
+  margin: 0.35rem 0;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.scoreBlock {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.scoreLabel {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.score {
+  margin: 0.4rem 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.bars {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.barRow {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.barTrack {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.barHome,
+.barAway {
+  display: block;
+  height: 0.55rem;
+  border-radius: 999px;
+}
+
+.barHome {
+  background: #3dd6c6;
+}
+
+.barAway {
+  background: #7aa2ff;
+}
+
+.chartWrap {
+  margin: 1.5rem 0;
+  min-height: 260px;
+}
+
+.factors {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.evaluation {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}

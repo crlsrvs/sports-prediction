@@ -1,0 +1,34 @@
+{
+  "name": "sports-prediction",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sports analysis and prediction platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:web": "npm run dev --workspace=@sports-prediction/web",
+    "dev:api": "npm run dev --workspace=@sports-prediction/api",
+    "dev:worker": "npm run dev --workspace=@sports-prediction/worker",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint \"apps/**/src/**/*.{ts,tsx}\" \"packages/**/src/**/*.{ts,tsx}\"",
+    "test": "vitest run",
+    "clean": "rimraf --glob '**/dist' '**/*.tsbuildinfo'"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^22.18.6",
+    "eslint": "^9.36.0",
+    "globals": "^16.4.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.0",
+    "vitest": "^3.2.4"
+  }
+}

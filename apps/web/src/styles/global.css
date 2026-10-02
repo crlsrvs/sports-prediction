@@ -1,0 +1,29 @@
+:root {
+  --color-bg-top: #0f1c2e;
+  --color-bg-bottom: #1a3348;
+  --color-surface: rgba(255, 255, 255, 0.06);
+  --color-text: #f4f7fb;
+  --color-muted: #b7c5d6;
+  --color-accent: #3dd6c6;
+  --font-display: "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-body: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background:
+    radial-gradient(circle at top right, rgba(61, 214, 198, 0.18), transparent 40%),
+    linear-gradient(160deg, var(--color-bg-top), var(--color-bg-bottom));
+}

@@ -1,0 +1,428 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  asCompetitionId,
+  asDataSourceId,
+  asMatchId,
+  asPredictionId,
+  asSportId,
+  asTeamId,
+  type Competition,
+  type Match,
+  type MatchId,
+  type MatchStatus,
+  type Prediction,
+  type PredictionFactor,
+  type Sport,
+  type Team,
+} from '@sports-prediction/domain';
+import type { DbPool } from '../client.js';
+import { createSeedData } from './seed.js';
+import type {
+  AppStore,
+  DataSourceRecord,
+  ScrapingJobRecord,
+  SourceHealth,
+  UnresolvedEntity,
+} from './types.js';
+
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+
+function mapSport(row: Record<string, unknown>): Sport {
+  return {
+    id: asSportId(String(row['id'])),
+    name: String(row['name']),
+    slug: String(row['slug']),
+    active: Boolean(row['active']),
+  };
+}
+
+function mapCompetition(row: Record<string, unknown>): Competition {
+  return {
+    id: asCompetitionId(String(row['id'])),
+    sportId: asSportId(String(row['sport_id'])),
+    name: String(row['name']),
+    country: row['country'] == null ? null : String(row['country']),
+    active: Boolean(row['active']),
+  };
+}
+
+function mapTeam(row: Record<string, unknown>): Team {
+  return {
+    id: asTeamId(String(row['id'])),
+    sportId: asSportId(String(row['sport_id'])),
+    canonicalName: String(row['canonical_name']),
+    aliases: (row['aliases'] as string[]) ?? [],
+  };
+}
+
+function mapMatch(row: Record<string, unknown>): Match {
+  return {
+    id: asMatchId(String(row['id'])),
+    sportId: asSportId(String(row['sport_id'])),
+    competitionId: asCompetitionId(String(row['competition_id'])),
+    seasonId: null,
+    homeTeamId: asTeamId(String(row['home_team_id'])),
+    awayTeamId: asTeamId(String(row['away_team_id'])),
+    scheduledAt: new Date(String(row['scheduled_at'])),
+    venueId: null,
+    status: String(row['status']) as MatchStatus,
+    homeScore: row['home_score'] == null ? null : Number(row['home_score']),
+    awayScore: row['away_score'] == null ? null : Number(row['away_score']),
+    sourceId: row['source_id'] == null ? null : asDataSourceId(String(row['source_id'])),
+    createdAt: new Date(String(row['created_at'])),
+    updatedAt: new Date(String(row['updated_at'])),
+  };
+}
+
+function mapPrediction(row: Record<string, unknown>): Prediction {
+  return {
+    id: asPredictionId(String(row['id'])),
+    matchId: asMatchId(String(row['match_id'])),
+    generatedAt: new Date(String(row['generated_at'])),
+    dataCutoffAt: new Date(String(row['data_cutoff_at'])),
+    modelVersion: String(row['model_version']),
+    predictedScore: {
+      home: Number(row['predicted_home']),
+      away: Number(row['predicted_away']),
+    },
+    expectedGoals: {
+      home: Number(row['expected_home']),
+      away: Number(row['expected_away']),
+    },
+    confidence: Number(row['confidence']),
+    factors: (row['factors'] as PredictionFactor[]) ?? [],
+  };
+}
+
+export class PostgresStore implements AppStore {
+  constructor(private readonly pool: DbPool) {}
+
+  static async migrate(pool: DbPool): Promise<void> {
+    const sqlPath = join(moduleDir, '../migrations/001_init.sql');
+    const sql = readFileSync(sqlPath, 'utf8');
+    await pool.query(sql);
+  }
+
+  static async seedIfEmpty(pool: DbPool): Promise<void> {
+    const result = await pool.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM matches',
+    );
+    const count = Number(result.rows[0]?.count ?? 0);
+    if (count > 0) return;
+
+    const store = new PostgresStore(pool);
+    const seed = createSeedData();
+    for (const sport of seed.sports) await store.upsertSport(sport);
+    for (const competition of seed.competitions) {
+      await store.upsertCompetition(competition);
+    }
+    for (const team of seed.teams) await store.upsertTeam(team);
+    for (const source of seed.sources) await store.upsertSource(source);
+    for (const match of seed.matches) await store.upsertMatch(match);
+    for (const prediction of seed.predictions) {
+      await store.savePrediction(prediction);
+    }
+    for (const unresolved of seed.unresolved) {
+      await pool.query(
+        `INSERT INTO unresolved_entities (id, incoming_name, source_id, created_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          unresolved.id,
+          unresolved.incomingName,
+          unresolved.sourceId,
+          unresolved.createdAt.toISOString(),
+        ],
+      );
+    }
+  }
+
+  async listSports(): Promise<readonly Sport[]> {
+    const result = await this.pool.query('SELECT * FROM sports ORDER BY name');
+    return result.rows.map((row) => mapSport(row));
+  }
+
+  async upsertSport(sport: Sport): Promise<Sport> {
+    await this.pool.query(
+      `INSERT INTO sports (id, name, slug, active)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug, active = EXCLUDED.active`,
+      [sport.id, sport.name, sport.slug, sport.active],
+    );
+    return sport;
+  }
+
+  async listCompetitions(sportId?: string): Promise<readonly Competition[]> {
+    const result = sportId
+      ? await this.pool.query(
+          'SELECT * FROM competitions WHERE sport_id = $1 ORDER BY name',
+          [sportId],
+        )
+      : await this.pool.query('SELECT * FROM competitions ORDER BY name');
+    return result.rows.map((row) => mapCompetition(row));
+  }
+
+  async upsertCompetition(competition: Competition): Promise<Competition> {
+    await this.pool.query(
+      `INSERT INTO competitions (id, sport_id, name, country, active)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET
+         sport_id = EXCLUDED.sport_id,
+         name = EXCLUDED.name,
+         country = EXCLUDED.country,
+         active = EXCLUDED.active`,
+      [
+        competition.id,
+        competition.sportId,
+        competition.name,
+        competition.country,
+        competition.active,
+      ],
+    );
+    return competition;
+  }
+
+  async listTeams(): Promise<readonly Team[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM teams ORDER BY canonical_name',
+    );
+    return result.rows.map((row) => mapTeam(row));
+  }
+
+  async getTeam(id: string): Promise<Team | null> {
+    const result = await this.pool.query('SELECT * FROM teams WHERE id = $1', [
+      id,
+    ]);
+    const row = result.rows[0];
+    return row ? mapTeam(row) : null;
+  }
+
+  async upsertTeam(team: Team): Promise<Team> {
+    await this.pool.query(
+      `INSERT INTO teams (id, sport_id, canonical_name, aliases)
+       VALUES ($1, $2, $3, $4::jsonb)
+       ON CONFLICT (id) DO UPDATE SET
+         sport_id = EXCLUDED.sport_id,
+         canonical_name = EXCLUDED.canonical_name,
+         aliases = EXCLUDED.aliases`,
+      [team.id, team.sportId, team.canonicalName, JSON.stringify(team.aliases)],
+    );
+    return team;
+  }
+
+  async listMatches(): Promise<readonly Match[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM matches ORDER BY scheduled_at ASC',
+    );
+    return result.rows.map((row) => mapMatch(row));
+  }
+
+  async getMatch(id: MatchId | string): Promise<Match | null> {
+    const result = await this.pool.query('SELECT * FROM matches WHERE id = $1', [
+      String(id),
+    ]);
+    const row = result.rows[0];
+    return row ? mapMatch(row) : null;
+  }
+
+  async upsertMatch(match: Match): Promise<Match> {
+    await this.pool.query(
+      `INSERT INTO matches (
+         id, sport_id, competition_id, season_id, home_team_id, away_team_id,
+         scheduled_at, venue_id, status, home_score, away_score, source_id, created_at, updated_at
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+       )
+       ON CONFLICT (id) DO UPDATE SET
+         status = EXCLUDED.status,
+         home_score = EXCLUDED.home_score,
+         away_score = EXCLUDED.away_score,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        match.id,
+        match.sportId,
+        match.competitionId,
+        match.seasonId,
+        match.homeTeamId,
+        match.awayTeamId,
+        match.scheduledAt.toISOString(),
+        match.venueId,
+        match.status,
+        match.homeScore,
+        match.awayScore,
+        match.sourceId,
+        match.createdAt.toISOString(),
+        match.updatedAt.toISOString(),
+      ],
+    );
+    return match;
+  }
+
+  async listPredictions(): Promise<readonly Prediction[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM predictions ORDER BY generated_at DESC',
+    );
+    return result.rows.map((row) => mapPrediction(row));
+  }
+
+  async getLatestPrediction(matchId: MatchId | string): Promise<Prediction | null> {
+    const result = await this.pool.query(
+      `SELECT * FROM predictions
+       WHERE match_id = $1
+       ORDER BY generated_at DESC
+       LIMIT 1`,
+      [String(matchId)],
+    );
+    const row = result.rows[0];
+    return row ? mapPrediction(row) : null;
+  }
+
+  async savePrediction(prediction: Prediction): Promise<Prediction> {
+    await this.pool.query(
+      `INSERT INTO predictions (
+         id, match_id, generated_at, data_cutoff_at, model_version,
+         predicted_home, predicted_away, expected_home, expected_away, confidence, factors
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb
+       )
+       ON CONFLICT (id) DO UPDATE SET
+         predicted_home = EXCLUDED.predicted_home,
+         predicted_away = EXCLUDED.predicted_away,
+         confidence = EXCLUDED.confidence,
+         factors = EXCLUDED.factors`,
+      [
+        prediction.id,
+        prediction.matchId,
+        prediction.generatedAt.toISOString(),
+        prediction.dataCutoffAt.toISOString(),
+        prediction.modelVersion,
+        prediction.predictedScore.home,
+        prediction.predictedScore.away,
+        prediction.expectedGoals.home,
+        prediction.expectedGoals.away,
+        prediction.confidence,
+        JSON.stringify(prediction.factors),
+      ],
+    );
+    return prediction;
+  }
+
+  async listSources(): Promise<readonly DataSourceRecord[]> {
+    const result = await this.pool.query('SELECT * FROM data_sources ORDER BY name');
+    return result.rows.map((row) => ({
+      id: asDataSourceId(String(row['id'])),
+      name: String(row['name']),
+      kind: String(row['kind']) as DataSourceRecord['kind'],
+      active: Boolean(row['active']),
+      health: String(row['health']) as SourceHealth,
+      lastSuccessAt: row['last_success_at']
+        ? new Date(String(row['last_success_at']))
+        : null,
+      lastFailureAt: row['last_failure_at']
+        ? new Date(String(row['last_failure_at']))
+        : null,
+      consecutiveFailures: Number(row['consecutive_failures']),
+    }));
+  }
+
+  async upsertSource(source: DataSourceRecord): Promise<DataSourceRecord> {
+    await this.pool.query(
+      `INSERT INTO data_sources (
+         id, name, kind, active, health, last_success_at, last_failure_at, consecutive_failures
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         kind = EXCLUDED.kind,
+         active = EXCLUDED.active,
+         health = EXCLUDED.health,
+         last_success_at = EXCLUDED.last_success_at,
+         last_failure_at = EXCLUDED.last_failure_at,
+         consecutive_failures = EXCLUDED.consecutive_failures`,
+      [
+        source.id,
+        source.name,
+        source.kind,
+        source.active,
+        source.health,
+        source.lastSuccessAt?.toISOString() ?? null,
+        source.lastFailureAt?.toISOString() ?? null,
+        source.consecutiveFailures,
+      ],
+    );
+    return source;
+  }
+
+  async listScrapingJobs(): Promise<readonly ScrapingJobRecord[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM scraping_jobs ORDER BY started_at DESC',
+    );
+    return result.rows.map((row) => ({
+      id: String(row['id']),
+      sourceId: asDataSourceId(String(row['source_id'])),
+      startedAt: new Date(String(row['started_at'])),
+      finishedAt: row['finished_at']
+        ? new Date(String(row['finished_at']))
+        : null,
+      status: String(row['status']) as ScrapingJobRecord['status'],
+      recordsFound: Number(row['records_found']),
+      recordsProcessed: Number(row['records_processed']),
+      recordsFailed: Number(row['records_failed']),
+      error: row['error'] == null ? null : String(row['error']),
+    }));
+  }
+
+  async addScrapingJob(job: ScrapingJobRecord): Promise<ScrapingJobRecord> {
+    await this.pool.query(
+      `INSERT INTO scraping_jobs (
+         id, source_id, started_at, finished_at, status,
+         records_found, records_processed, records_failed, error
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        job.id,
+        job.sourceId,
+        job.startedAt.toISOString(),
+        job.finishedAt?.toISOString() ?? null,
+        job.status,
+        job.recordsFound,
+        job.recordsProcessed,
+        job.recordsFailed,
+        job.error,
+      ],
+    );
+    return job;
+  }
+
+  async listUnresolvedEntities(): Promise<readonly UnresolvedEntity[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM unresolved_entities ORDER BY created_at DESC',
+    );
+    return result.rows.map((row) => ({
+      id: String(row['id']),
+      incomingName: String(row['incoming_name']),
+      sourceId: asDataSourceId(String(row['source_id'])),
+      createdAt: new Date(String(row['created_at'])),
+    }));
+  }
+
+  async resolveEntity(input: {
+    readonly unresolvedId: string;
+    readonly teamId: string;
+    readonly alias: string;
+  }): Promise<Team | null> {
+    const team = await this.getTeam(input.teamId);
+    if (!team) return null;
+    const updated: Team = {
+      ...team,
+      aliases: team.aliases.includes(input.alias)
+        ? team.aliases
+        : [...team.aliases, input.alias],
+    };
+    await this.upsertTeam(updated);
+    await this.pool.query('DELETE FROM unresolved_entities WHERE id = $1', [
+      input.unresolvedId,
+    ]);
+    return updated;
+  }
+}
