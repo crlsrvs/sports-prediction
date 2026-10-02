@@ -13,6 +13,7 @@ import {
   evaluatePrediction,
   predictionEngine,
 } from '@sports-prediction/prediction';
+import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import { STORE } from '../store/store.tokens.js';
 
 @Injectable()
@@ -27,14 +28,58 @@ export class AnalysisService {
     const end = new Date(today);
     end.setUTCHours(23, 59, 59, 999);
 
-    const todays = matches.filter(
-      (match) =>
-        match.scheduledAt.getTime() >= start.getTime() &&
-        match.scheduledAt.getTime() <= end.getTime(),
+    const isToday = (time: number): boolean =>
+      time >= start.getTime() && time <= end.getTime();
+
+    const realMatches = matches.filter(
+      (match) => String(match.sourceId) === API_FOOTBALL_SOURCE_ID,
     );
 
+    let selected: readonly typeof matches[number][];
+    if (realMatches.length > 0) {
+      // Real data wins over seed. Show today's real fixtures, otherwise the
+      // most recent real matchday available (free plans expose past seasons).
+      const todaysReal = realMatches.filter((match) =>
+        isToday(match.scheduledAt.getTime()),
+      );
+      if (todaysReal.length > 0) {
+        selected = todaysReal;
+      } else {
+        // Pick the latest matchday per competition so every MVP league shows up.
+        const byCompetition = new Map<string, typeof matches[number][]>();
+        for (const match of realMatches) {
+          const list = byCompetition.get(match.competitionId) ?? [];
+          list.push(match);
+          byCompetition.set(match.competitionId, list);
+        }
+
+        const picked: typeof matches[number][] = [];
+        for (const list of byCompetition.values()) {
+          const sortedDesc = [...list].sort(
+            (a, b) => b.scheduledAt.getTime() - a.scheduledAt.getTime(),
+          );
+          const newest = sortedDesc[0];
+          if (!newest) continue;
+          const dayStart = new Date(newest.scheduledAt);
+          dayStart.setUTCHours(0, 0, 0, 0);
+          const windowStart = dayStart.getTime() - 3 * 24 * 60 * 60 * 1000;
+          picked.push(
+            ...sortedDesc
+              .filter((match) => match.scheduledAt.getTime() >= windowStart)
+              .slice(0, 12),
+          );
+        }
+
+        selected = picked.sort(
+          (a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime(),
+        );
+      }
+    } else {
+      selected = matches.filter((match) => isToday(match.scheduledAt.getTime()));
+    }
+
     const cards: MatchCard[] = [];
-    for (const match of todays) {
+    for (const match of selected) {
       const card = await this.toCard(match.id);
       if (card) cards.push(card);
     }

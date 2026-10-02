@@ -1,6 +1,7 @@
 export const JOB_NAMES = {
   DISCOVER_TODAYS_MATCHES: 'discover-todays-matches',
   SCRAPE_SOURCE: 'scrape-source',
+  IMPORT_SEASON: 'import-season',
   NORMALIZE_SOURCE_DATA: 'normalize-source-data',
   CALCULATE_FEATURES: 'calculate-features',
   GENERATE_PREDICTIONS: 'generate-predictions',

@@ -11,9 +11,10 @@ import {
 } from '@sports-prediction/prediction';
 import {
   createApiFootballAdapterFromEnv,
-  currentFootballSeason,
   ingestApiFootballFixtures,
+  resolveApiFootballSeason,
 } from '@sports-prediction/scraping';
+
 import {
   API_FOOTBALL_SOURCE_ID,
   MAX_RAW_RETENTION_DAYS,
@@ -35,6 +36,8 @@ export async function runPipelineJob(
     }
     case JOB_NAMES.SCRAPE_SOURCE:
       return scrapeSource(store);
+    case JOB_NAMES.IMPORT_SEASON:
+      return importSeason(store);
     case JOB_NAMES.NORMALIZE_SOURCE_DATA:
       return {
         ok: true,
@@ -103,8 +106,8 @@ async function scrapeSource(
   const startedAt = new Date();
   try {
     const today = startedAt.toISOString().slice(0, 10);
-    const season = currentFootballSeason(startedAt);
-    const { raw, fixtures } = await adapter.fetchTodaysFixtures({
+    const season = resolveApiFootballSeason(startedAt);
+    const { raw, fixtures, warnings } = await adapter.fetchTodaysFixtures({
       date: today,
       season,
     });
@@ -149,16 +152,18 @@ async function scrapeSource(
       });
     }
 
+    const warningText = warnings.length > 0 ? warnings.join(' | ') : null;
     await store.addScrapingJob({
       id: `job-${crypto.randomUUID()}`,
       sourceId: apiSource.id,
       startedAt,
       finishedAt: new Date(),
-      status: ingested.failed > 0 ? 'partial' : 'success',
+      status:
+        ingested.processed === 0 || ingested.failed > 0 ? 'partial' : 'success',
       recordsFound: fixtures.length,
       recordsProcessed: ingested.processed,
       recordsFailed: ingested.failed,
-      error: null,
+      error: warningText,
     });
 
     await store.upsertSource({
@@ -171,7 +176,10 @@ async function scrapeSource(
 
     return {
       ok: true,
-      detail: `scraped:${ingested.processed}`,
+      detail:
+        ingested.processed > 0
+          ? `scraped:${ingested.processed}`
+          : `scraped:0:${warningText ?? 'no-mvp-fixtures'}`,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -191,6 +199,109 @@ async function scrapeSource(
       health: 'broken',
       lastFailureAt: new Date(),
       consecutiveFailures: apiSource.consecutiveFailures + 1,
+    });
+    return { ok: true, detail: `failed:${message}` };
+  }
+}
+
+/**
+ * Imports full-season real fixtures (PL/UCL/La Liga) for the configured season.
+ * Free API-Football plans allow seasons 2022–2024, so this is the primary path
+ * to real historical data; results are persisted as finished matches.
+ */
+async function importSeason(
+  store: AppStore,
+): Promise<{ readonly ok: true; readonly detail: string }> {
+  const sources = await store.listSources();
+  const apiSource =
+    sources.find((item) => String(item.id) === API_FOOTBALL_SOURCE_ID) ?? null;
+  const adapter = createApiFootballAdapterFromEnv();
+  if (!adapter || !apiSource) {
+    return {
+      ok: true,
+      detail: adapter
+        ? 'skipped:api-football-source-missing'
+        : 'skipped:missing-api-football-key',
+    };
+  }
+
+  const startedAt = new Date();
+  const season = resolveApiFootballSeason(startedAt);
+  try {
+    const { raw, fixtures, warnings } = await adapter.fetchMvpSeason(season);
+
+    for (const scrape of raw) {
+      await store.saveRawRecord({
+        id: `raw-${crypto.randomUUID()}`,
+        sourceId: scrape.sourceId,
+        url: scrape.url,
+        fetchedAt: scrape.fetchedAt,
+        statusCode: scrape.statusCode,
+        contentType: scrape.contentType,
+        payload: scrape.payload,
+        checksum: scrape.checksum,
+        metadata: { ...scrape.metadata, season: String(season) },
+      });
+    }
+
+    const [teams, competitions] = await Promise.all([
+      store.listTeams(),
+      store.listCompetitions(),
+    ]);
+    const ingested = ingestApiFootballFixtures({
+      fixtures,
+      teams,
+      competitions,
+      now: startedAt,
+    });
+
+    for (const team of ingested.teamsToUpsert) {
+      await store.upsertTeam(team);
+    }
+    for (const match of ingested.matches) {
+      await store.upsertMatch(match);
+    }
+
+    const warningText = warnings.length > 0 ? warnings.join(' | ') : null;
+    await store.addScrapingJob({
+      id: `job-${crypto.randomUUID()}`,
+      sourceId: apiSource.id,
+      startedAt,
+      finishedAt: new Date(),
+      status:
+        ingested.processed === 0 || ingested.failed > 0 || warnings.length > 0
+          ? 'partial'
+          : 'success',
+      recordsFound: fixtures.length,
+      recordsProcessed: ingested.processed,
+      recordsFailed: ingested.failed,
+      error: warningText,
+    });
+
+    await store.upsertSource({
+      ...apiSource,
+      active: true,
+      health: 'healthy',
+      lastSuccessAt: new Date(),
+      consecutiveFailures: 0,
+    });
+
+    return {
+      ok: true,
+      detail: `imported-season:${season}:${ingested.processed}`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await store.addScrapingJob({
+      id: `job-${crypto.randomUUID()}`,
+      sourceId: apiSource.id,
+      startedAt,
+      finishedAt: new Date(),
+      status: 'failed',
+      recordsFound: 0,
+      recordsProcessed: 0,
+      recordsFailed: 1,
+      error: message,
     });
     return { ok: true, detail: `failed:${message}` };
   }

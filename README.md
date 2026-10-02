@@ -48,10 +48,12 @@ If PostgreSQL is unavailable, the API automatically falls back to a seeded in-me
 
 ### Live data (API-Football)
 
-1. Set `API_FOOTBALL_KEY` in `.env`.
+1. Set `API_FOOTBALL_KEY` in `.env` (optional: `API_FOOTBALL_SEASON=2024`).
 2. Start Redis (`docker compose up -d`) plus `npm run dev:api`, `npm run dev:worker`, and `npm run dev:web`.
 3. In Admin, **Probar** the API-Football source, then enqueue `scrape-source` and `generate-predictions`.
 4. The dashboard banner switches from seed demo to live when fixtures from that source exist.
+
+**Free-plan limits:** only a ~3-day date window, no `last`/`next`, and seasons above 2024 are blocked. If PL/UCL/La Liga have no fixtures that day, the app stays on seed demo until a matchday or a paid plan.
 
 ## Agent / contributor rules
 

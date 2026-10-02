@@ -7,6 +7,7 @@ import styles from './AdminPage.module.css';
 const ENQUEUEABLE_JOBS = [
   'discover-todays-matches',
   'scrape-source',
+  'import-season',
   'generate-predictions',
   'evaluate-predictions',
   'source-health-check',

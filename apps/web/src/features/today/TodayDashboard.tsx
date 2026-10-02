@@ -85,7 +85,8 @@ export function TodayDashboard() {
 
       {meta.data?.dataMode === 'live' ? (
         <p className={styles.bannerLive} role="status">
-          Datos en vivo desde API-Football.
+          Datos reales desde API-Football. Si hoy no hay jornada de PL/UCL/La
+          Liga, se muestra la última jornada disponible.
         </p>
       ) : null}
 
