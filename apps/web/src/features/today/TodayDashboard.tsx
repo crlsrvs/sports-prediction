@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { MatchCard } from '@sports-prediction/domain';
@@ -19,10 +20,40 @@ function groupByCompetition(
 }
 
 export function TodayDashboard() {
+  const [competitionFilter, setCompetitionFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const meta = useQuery({
+    queryKey: ['meta'],
+    queryFn: api.getMeta,
+  });
+
   const query = useQuery({
     queryKey: ['matches', 'today'],
     queryFn: api.getTodayMatches,
   });
+
+  const competitions = useMemo(() => {
+    const names = new Set(
+      (query.data ?? []).map((card) => card.competition.name),
+    );
+    return [...names].sort();
+  }, [query.data]);
+
+  const filtered = useMemo(() => {
+    return (query.data ?? []).filter((card) => {
+      if (
+        competitionFilter !== 'all' &&
+        card.competition.name !== competitionFilter
+      ) {
+        return false;
+      }
+      if (statusFilter !== 'all' && card.match.status !== statusFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [query.data, competitionFilter, statusFilter]);
 
   if (query.isPending) {
     return <p className={styles.message}>Cargando partidos…</p>;
@@ -39,47 +70,96 @@ export function TodayDashboard() {
     );
   }
 
-  const byCompetition = groupByCompetition(query.data);
+  const byCompetition = groupByCompetition(filtered);
 
   return (
     <section className={styles.list}>
       <h2 className={styles.emptyTitle}>Hoy</h2>
-      {byCompetition.map(([competition, cards]) => (
-        <div key={competition} className={styles.competitionBlock}>
-          <h3 className={styles.competitionName}>{competition}</h3>
-          <ul className={styles.matches}>
-            {cards.map((card) => (
-              <li key={card.match.id} className={styles.matchItem}>
-                <div>
-                  <p className={styles.kickoff}>
-                    {formatKickoff(card.match.scheduledAt)}
-                  </p>
-                  <p className={styles.teams}>
-                    {card.homeTeam.canonicalName} vs {card.awayTeam.canonicalName}
-                  </p>
-                  <p className={styles.form}>
-                    Forma: {formatForm(card.homeForm)} / {formatForm(card.awayForm)}
-                  </p>
-                  {card.prediction ? (
-                    <p className={styles.prediction}>
-                      Marcador estimado:{' '}
-                      {card.prediction.predictedScore.home} -{' '}
-                      {card.prediction.predictedScore.away} (
-                      {card.prediction.confidence}%)
-                    </p>
-                  ) : null}
-                </div>
-                <Link
-                  className={styles.analyzeButton}
-                  to={`/matches/${card.match.id}`}
-                >
-                  Analizar
-                </Link>
-              </li>
+
+      {meta.data?.dataMode === 'seed' ? (
+        <p className={styles.banner} role="status">
+          Datos demo (seed). Los partidos de hoy son de ejemplo hasta configurar
+          API_FOOTBALL_KEY e ingerir fixtures reales.
+        </p>
+      ) : null}
+
+      {meta.data?.dataMode === 'live' ? (
+        <p className={styles.bannerLive} role="status">
+          Datos en vivo desde API-Football.
+        </p>
+      ) : null}
+
+      <div className={styles.filters}>
+        <label>
+          Competición
+          <select
+            value={competitionFilter}
+            onChange={(event) => setCompetitionFilter(event.target.value)}
+          >
+            <option value="all">Todas</option>
+            {competitions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
             ))}
-          </ul>
-        </div>
-      ))}
+          </select>
+        </label>
+        <label>
+          Estado
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="all">Todos</option>
+            <option value="scheduled">Programado</option>
+            <option value="live">En vivo</option>
+            <option value="finished">Finalizado</option>
+          </select>
+        </label>
+      </div>
+
+      {byCompetition.length === 0 ? (
+        <p className={styles.message}>No hay partidos con esos filtros.</p>
+      ) : (
+        byCompetition.map(([competition, cards]) => (
+          <div key={competition} className={styles.competitionBlock}>
+            <h3 className={styles.competitionName}>{competition}</h3>
+            <ul className={styles.matches}>
+              {cards.map((card) => (
+                <li key={card.match.id} className={styles.matchItem}>
+                  <div>
+                    <p className={styles.kickoff}>
+                      {formatKickoff(card.match.scheduledAt)} · {card.match.status}
+                    </p>
+                    <p className={styles.teams}>
+                      {card.homeTeam.canonicalName} vs{' '}
+                      {card.awayTeam.canonicalName}
+                    </p>
+                    <p className={styles.form}>
+                      Forma: {formatForm(card.homeForm)} /{' '}
+                      {formatForm(card.awayForm)}
+                    </p>
+                    {card.prediction ? (
+                      <p className={styles.prediction}>
+                        Marcador estimado:{' '}
+                        {card.prediction.predictedScore.home} -{' '}
+                        {card.prediction.predictedScore.away} (
+                        {card.prediction.confidence}%)
+                      </p>
+                    ) : null}
+                  </div>
+                  <Link
+                    className={styles.analyzeButton}
+                    to={`/matches/${card.match.id}`}
+                  >
+                    Analizar
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
     </section>
   );
 }

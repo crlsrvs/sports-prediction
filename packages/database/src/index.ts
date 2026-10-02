@@ -6,8 +6,12 @@ export { PostgresStore } from './store/postgresStore.js';
 export { createSeedData } from './store/seed.js';
 export type {
   AppStore,
+  DataMode,
   DataSourceRecord,
+  EntityAliasRecord,
+  RawRecord,
   ScrapingJobRecord,
   SourceHealth,
   UnresolvedEntity,
 } from './store/types.js';
+

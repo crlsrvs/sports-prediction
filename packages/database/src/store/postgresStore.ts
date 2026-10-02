@@ -19,15 +19,20 @@ import {
 } from '@sports-prediction/domain';
 import type { DbPool } from '../client.js';
 import { createSeedData } from './seed.js';
+import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import type {
   AppStore,
+  DataMode,
   DataSourceRecord,
+  EntityAliasRecord,
+  RawRecord,
   ScrapingJobRecord,
   SourceHealth,
   UnresolvedEntity,
 } from './types.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
+const migrationsDir = join(moduleDir, '../migrations');
 
 function mapSport(row: Record<string, unknown>): Sport {
   return {
@@ -100,9 +105,14 @@ export class PostgresStore implements AppStore {
   constructor(private readonly pool: DbPool) {}
 
   static async migrate(pool: DbPool): Promise<void> {
-    const sqlPath = join(moduleDir, '../migrations/001_init.sql');
-    const sql = readFileSync(sqlPath, 'utf8');
-    await pool.query(sql);
+    const migrationFiles = [
+      '001_init.sql',
+      '002_raw_and_aliases.sql',
+    ] as const;
+    for (const file of migrationFiles) {
+      const sql = readFileSync(join(migrationsDir, file), 'utf8');
+      await pool.query(sql);
+    }
   }
 
   static async seedIfEmpty(pool: DbPool): Promise<void> {
@@ -406,6 +416,23 @@ export class PostgresStore implements AppStore {
     }));
   }
 
+  async addUnresolvedEntity(
+    entity: UnresolvedEntity,
+  ): Promise<UnresolvedEntity> {
+    await this.pool.query(
+      `INSERT INTO unresolved_entities (id, incoming_name, source_id, created_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        entity.id,
+        entity.incomingName,
+        entity.sourceId,
+        entity.createdAt.toISOString(),
+      ],
+    );
+    return entity;
+  }
+
   async resolveEntity(input: {
     readonly unresolvedId: string;
     readonly teamId: string;
@@ -424,5 +451,99 @@ export class PostgresStore implements AppStore {
       input.unresolvedId,
     ]);
     return updated;
+  }
+
+  async saveRawRecord(record: RawRecord): Promise<RawRecord> {
+    await this.pool.query(
+      `INSERT INTO raw_records (
+         id, source_id, url, fetched_at, status_code, content_type, payload, checksum, metadata
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+       ON CONFLICT (id) DO UPDATE SET
+         payload = EXCLUDED.payload,
+         checksum = EXCLUDED.checksum,
+         fetched_at = EXCLUDED.fetched_at`,
+      [
+        record.id,
+        record.sourceId,
+        record.url,
+        record.fetchedAt.toISOString(),
+        record.statusCode,
+        record.contentType,
+        record.payload,
+        record.checksum,
+        JSON.stringify(record.metadata),
+      ],
+    );
+    return record;
+  }
+
+  async listRawRecords(limit = 50): Promise<readonly RawRecord[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM raw_records ORDER BY fetched_at DESC LIMIT $1',
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      id: String(row['id']),
+      sourceId: asDataSourceId(String(row['source_id'])),
+      url: String(row['url']),
+      fetchedAt: new Date(String(row['fetched_at'])),
+      statusCode: Number(row['status_code']),
+      contentType:
+        row['content_type'] == null ? null : String(row['content_type']),
+      payload: String(row['payload']),
+      checksum: String(row['checksum']),
+      metadata: (row['metadata'] as Record<string, string>) ?? {},
+    }));
+  }
+
+  async deleteRawRecordsOlderThan(cutoff: Date): Promise<number> {
+    const result = await this.pool.query(
+      'DELETE FROM raw_records WHERE fetched_at < $1',
+      [cutoff.toISOString()],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async listEntityAliases(): Promise<readonly EntityAliasRecord[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM entity_aliases ORDER BY created_at DESC',
+    );
+    return result.rows.map((row) => ({
+      id: String(row['id']),
+      teamId: asTeamId(String(row['team_id'])),
+      alias: String(row['alias']),
+      sourceId:
+        row['source_id'] == null
+          ? null
+          : asDataSourceId(String(row['source_id'])),
+      createdAt: new Date(String(row['created_at'])),
+    }));
+  }
+
+  async upsertEntityAlias(
+    alias: EntityAliasRecord,
+  ): Promise<EntityAliasRecord> {
+    await this.pool.query(
+      `INSERT INTO entity_aliases (id, team_id, alias, source_id, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (alias, source_id) DO UPDATE SET
+         team_id = EXCLUDED.team_id`,
+      [
+        alias.id,
+        alias.teamId,
+        alias.alias,
+        alias.sourceId,
+        alias.createdAt.toISOString(),
+      ],
+    );
+    return alias;
+  }
+
+  async getDataMode(): Promise<DataMode> {
+    const result = await this.pool.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM matches WHERE source_id = $1',
+      [API_FOOTBALL_SOURCE_ID],
+    );
+    return Number(result.rows[0]?.count ?? 0) > 0 ? 'live' : 'seed';
   }
 }

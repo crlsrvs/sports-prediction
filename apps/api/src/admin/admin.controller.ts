@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -16,8 +17,18 @@ import {
   type Competition,
   type Prediction,
   type Sport,
+  type Team,
 } from '@sports-prediction/domain';
+import { createApiFootballAdapterFromEnv } from '@sports-prediction/scraping';
+import {
+  API_FOOTBALL_SOURCE_ID,
+  isJobName,
+  JOB_NAMES,
+  SEED_SOURCE_ID,
+  type JobName,
+} from '@sports-prediction/shared';
 import { AnalysisService } from '../analysis/analysis.service.js';
+import { enqueueJob } from '../jobs/jobQueue.js';
 import { STORE } from '../store/store.tokens.js';
 
 @Controller('admin')
@@ -75,32 +86,139 @@ export class AdminController {
   }
 
   @Post('sources/:id/test')
-  async testSource(@Param('id') id: string): Promise<DataSourceRecord> {
+  async testSource(
+    @Param('id') id: string,
+  ): Promise<{
+    readonly source: DataSourceRecord;
+    readonly detail: string;
+  }> {
     const sources = await this.store.listSources();
     const current = sources.find((item) => item.id === id);
     if (!current) throw new NotFoundException('Fuente no encontrada');
 
     const now = new Date();
-    const job = await this.store.addScrapingJob({
+
+    if (String(current.id) === SEED_SOURCE_ID) {
+      const matches = await this.store.listMatches();
+      const seeded = matches.filter(
+        (match) => String(match.sourceId) === SEED_SOURCE_ID,
+      );
+      await this.store.addScrapingJob({
+        id: `job-${crypto.randomUUID()}`,
+        sourceId: current.id,
+        startedAt: now,
+        finishedAt: now,
+        status: 'success',
+        recordsFound: seeded.length,
+        recordsProcessed: seeded.length,
+        recordsFailed: 0,
+        error: null,
+      });
+      const source = await this.store.upsertSource({
+        ...current,
+        health: 'healthy',
+        lastSuccessAt: now,
+        consecutiveFailures: 0,
+      });
+      return {
+        source,
+        detail: `seed-ok:${seeded.length}`,
+      };
+    }
+
+    if (String(current.id) === API_FOOTBALL_SOURCE_ID) {
+      const adapter = createApiFootballAdapterFromEnv();
+      if (!adapter) {
+        await this.store.addScrapingJob({
+          id: `job-${crypto.randomUUID()}`,
+          sourceId: current.id,
+          startedAt: now,
+          finishedAt: now,
+          status: 'skipped',
+          recordsFound: 0,
+          recordsProcessed: 0,
+          recordsFailed: 0,
+          error: 'API_FOOTBALL_KEY not configured',
+        });
+        const source = await this.store.upsertSource({
+          ...current,
+          active: false,
+          health: 'disabled',
+        });
+        return {
+          source,
+          detail: 'skipped:missing-api-football-key',
+        };
+      }
+
+      try {
+        const ping = await adapter.ping();
+        if (!ping.ok) {
+          throw new Error('API-Football ping failed');
+        }
+        await this.store.addScrapingJob({
+          id: `job-${crypto.randomUUID()}`,
+          sourceId: current.id,
+          startedAt: now,
+          finishedAt: now,
+          status: 'success',
+          recordsFound: ping.results,
+          recordsProcessed: ping.results,
+          recordsFailed: 0,
+          error: null,
+        });
+        const source = await this.store.upsertSource({
+          ...current,
+          active: true,
+          health: 'healthy',
+          lastSuccessAt: now,
+          consecutiveFailures: 0,
+        });
+        return {
+          source,
+          detail: `api-football-ok:${ping.results}`,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.store.addScrapingJob({
+          id: `job-${crypto.randomUUID()}`,
+          sourceId: current.id,
+          startedAt: now,
+          finishedAt: now,
+          status: 'failed',
+          recordsFound: 0,
+          recordsProcessed: 0,
+          recordsFailed: 1,
+          error: message,
+        });
+        const source = await this.store.upsertSource({
+          ...current,
+          health: 'broken',
+          lastFailureAt: now,
+          consecutiveFailures: current.consecutiveFailures + 1,
+        });
+        return {
+          source,
+          detail: `api-football-failed:${message}`,
+        };
+      }
+    }
+
+    await this.store.addScrapingJob({
       id: `job-${crypto.randomUUID()}`,
       sourceId: current.id,
       startedAt: now,
       finishedAt: now,
-      status: 'success',
-      recordsFound: 4,
-      recordsProcessed: 4,
+      status: 'skipped',
+      recordsFound: 0,
+      recordsProcessed: 0,
       recordsFailed: 0,
-      error: null,
+      error: 'No adapter wired for this source',
     });
-
-    void job;
-
-    return this.store.upsertSource({
-      ...current,
-      health: 'healthy',
-      lastSuccessAt: now,
-      consecutiveFailures: 0,
-    });
+    return {
+      source: current,
+      detail: 'skipped:unsupported-source',
+    };
   }
 
   @Get('scraping/jobs')
@@ -108,9 +226,33 @@ export class AdminController {
     return this.store.listScrapingJobs();
   }
 
+  @Post('jobs')
+  async enqueue(
+    @Body() body: { readonly name?: string },
+  ): Promise<{ readonly jobId: string; readonly name: JobName }> {
+    if (!body.name || !isJobName(body.name)) {
+      throw new BadRequestException(
+        `Job inválido. Permitidos: ${Object.values(JOB_NAMES).join(', ')}`,
+      );
+    }
+    try {
+      return await enqueueJob(body.name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(
+        `No se pudo encolar el job (¿Redis activo?): ${message}`,
+      );
+    }
+  }
+
   @Get('entities/unresolved')
   listUnresolved() {
     return this.store.listUnresolvedEntities();
+  }
+
+  @Get('teams')
+  listTeams(): Promise<readonly Team[]> {
+    return this.store.listTeams();
   }
 
   @Post('entities/match')
@@ -175,11 +317,12 @@ export class AdminController {
 
   @Get('health')
   async systemHealth() {
-    const [sources, jobs, unresolved, predictions] = await Promise.all([
+    const [sources, jobs, unresolved, predictions, dataMode] = await Promise.all([
       this.store.listSources(),
       this.store.listScrapingJobs(),
       this.store.listUnresolvedEntities(),
       this.store.listPredictions(),
+      this.store.getDataMode(),
     ]);
     return {
       sources: sources.length,
@@ -187,6 +330,14 @@ export class AdminController {
       jobs: jobs.length,
       unresolvedEntities: unresolved.length,
       predictions: predictions.length,
+      dataMode,
+    };
+  }
+
+  @Get('meta')
+  async meta() {
+    return {
+      dataMode: await this.store.getDataMode(),
     };
   }
 }

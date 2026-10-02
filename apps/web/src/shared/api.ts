@@ -22,7 +22,13 @@ export interface ScrapingJobDto {
   readonly sourceId: string;
   readonly startedAt: string;
   readonly finishedAt: string | null;
-  readonly status: 'queued' | 'running' | 'success' | 'partial' | 'failed';
+  readonly status:
+    | 'queued'
+    | 'running'
+    | 'success'
+    | 'partial'
+    | 'failed'
+    | 'skipped';
   readonly recordsFound: number;
   readonly recordsProcessed: number;
   readonly recordsFailed: number;
@@ -36,6 +42,11 @@ export interface UnresolvedEntityDto {
   readonly createdAt: string;
 }
 
+export interface TestSourceResult {
+  readonly source: DataSourceDto;
+  readonly detail: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     headers: {
@@ -46,7 +57,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`Error API ${response.status} en ${path}`);
+    let detail = `Error API ${response.status} en ${path}`;
+    try {
+      const body = (await response.json()) as { message?: string | string[] };
+      if (typeof body.message === 'string') detail = body.message;
+      else if (Array.isArray(body.message)) detail = body.message.join(', ');
+    } catch {
+      // keep default
+    }
+    throw new Error(detail);
   }
 
   return (await response.json()) as T;
@@ -57,6 +76,13 @@ export const api = {
   getMatchAnalysis: (id: string) =>
     request<MatchAnalysis>(`/matches/${id}/analysis`),
   getSports: () => request<Sport[]>('/sports'),
+  getTeams: () => request<Team[]>('/teams'),
+  getCompetitions: () =>
+    request<Array<{ id: string; name: string; sportId: string }>>(
+      '/competitions',
+    ),
+  getMeta: () =>
+    request<{ dataMode: 'seed' | 'live' }>('/meta'),
   getAdminHealth: () =>
     request<{
       sources: number;
@@ -64,10 +90,16 @@ export const api = {
       jobs: number;
       unresolvedEntities: number;
       predictions: number;
+      dataMode: 'seed' | 'live';
     }>('/admin/health'),
   getSources: () => request<DataSourceDto[]>('/admin/sources'),
   testSource: (id: string) =>
-    request<DataSourceDto>(`/admin/sources/${id}/test`, { method: 'POST' }),
+    request<TestSourceResult>(`/admin/sources/${id}/test`, { method: 'POST' }),
+  enqueueJob: (name: string) =>
+    request<{ jobId: string; name: string }>('/admin/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   getJobs: () => request<ScrapingJobDto[]>('/admin/scraping/jobs'),
   getUnresolved: () => request<UnresolvedEntityDto[]>('/admin/entities/unresolved'),
   resolveEntity: (body: {

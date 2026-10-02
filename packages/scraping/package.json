@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@sports-prediction/domain": "0.1.0",
+    "@sports-prediction/normalization": "0.1.0",
     "@sports-prediction/shared": "0.1.0"
   }
 }

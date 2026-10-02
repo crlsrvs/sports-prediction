@@ -16,3 +16,13 @@ export const MIN_RAW_RETENTION_DAYS = 7;
 export function assertNever(value: never): never {
   throw new Error(`Unexpected value: ${String(value)}`);
 }
+
+export {
+  API_FOOTBALL_SOURCE_ID,
+  DEFAULT_QUEUE_NAME,
+  isJobName,
+  JOB_NAMES,
+  SEED_SOURCE_ID,
+  type JobName,
+} from './jobs.js';
+

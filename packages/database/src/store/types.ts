@@ -6,6 +6,7 @@ import type {
   Prediction,
   Sport,
   Team,
+  TeamId,
 } from '@sports-prediction/domain';
 
 export type SourceHealth = 'healthy' | 'warning' | 'broken' | 'disabled';
@@ -26,7 +27,7 @@ export interface ScrapingJobRecord {
   readonly sourceId: DataSourceId;
   readonly startedAt: Date;
   readonly finishedAt: Date | null;
-  readonly status: 'queued' | 'running' | 'success' | 'partial' | 'failed';
+  readonly status: 'queued' | 'running' | 'success' | 'partial' | 'failed' | 'skipped';
   readonly recordsFound: number;
   readonly recordsProcessed: number;
   readonly recordsFailed: number;
@@ -39,6 +40,28 @@ export interface UnresolvedEntity {
   readonly sourceId: DataSourceId;
   readonly createdAt: Date;
 }
+
+export interface RawRecord {
+  readonly id: string;
+  readonly sourceId: DataSourceId;
+  readonly url: string;
+  readonly fetchedAt: Date;
+  readonly statusCode: number;
+  readonly contentType: string | null;
+  readonly payload: string;
+  readonly checksum: string;
+  readonly metadata: Readonly<Record<string, string>>;
+}
+
+export interface EntityAliasRecord {
+  readonly id: string;
+  readonly teamId: TeamId;
+  readonly alias: string;
+  readonly sourceId: DataSourceId | null;
+  readonly createdAt: Date;
+}
+
+export type DataMode = 'seed' | 'live';
 
 export interface AppStore {
   listSports(): Promise<readonly Sport[]>;
@@ -59,9 +82,16 @@ export interface AppStore {
   listScrapingJobs(): Promise<readonly ScrapingJobRecord[]>;
   addScrapingJob(job: ScrapingJobRecord): Promise<ScrapingJobRecord>;
   listUnresolvedEntities(): Promise<readonly UnresolvedEntity[]>;
+  addUnresolvedEntity(entity: UnresolvedEntity): Promise<UnresolvedEntity>;
   resolveEntity(input: {
     readonly unresolvedId: string;
     readonly teamId: string;
     readonly alias: string;
   }): Promise<Team | null>;
+  saveRawRecord(record: RawRecord): Promise<RawRecord>;
+  listRawRecords(limit?: number): Promise<readonly RawRecord[]>;
+  deleteRawRecordsOlderThan(cutoff: Date): Promise<number>;
+  listEntityAliases(): Promise<readonly EntityAliasRecord[]>;
+  upsertEntityAlias(alias: EntityAliasRecord): Promise<EntityAliasRecord>;
+  getDataMode(): Promise<DataMode>;
 }

@@ -16,6 +16,48 @@
   line-height: 1.5;
 }
 
+.banner,
+.bannerLive {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.banner {
+  border: 1px solid rgba(240, 192, 64, 0.45);
+  background: rgba(240, 192, 64, 0.12);
+  color: #f0c040;
+}
+
+.bannerLive {
+  border: 1px solid rgba(61, 214, 198, 0.45);
+  background: rgba(61, 214, 198, 0.12);
+  color: var(--color-accent);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.filters label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.filters select {
+  min-width: 12rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: inherit;
+  padding: 0.4rem 0.55rem;
+}
+
 .competitionBlock + .competitionBlock {
   margin-top: 1.5rem;
 }

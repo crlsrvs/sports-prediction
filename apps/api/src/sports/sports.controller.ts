@@ -1,6 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
-import type { AppStore } from '@sports-prediction/database';
-import type { Competition, Sport } from '@sports-prediction/domain';
+import type { AppStore, DataMode } from '@sports-prediction/database';
+import type { Competition, Sport, Team } from '@sports-prediction/domain';
 import { STORE } from '../store/store.tokens.js';
 
 @Controller()
@@ -15,5 +15,15 @@ export class SportsController {
   @Get('competitions')
   listCompetitions(): Promise<readonly Competition[]> {
     return this.store.listCompetitions();
+  }
+
+  @Get('teams')
+  listTeams(): Promise<readonly Team[]> {
+    return this.store.listTeams();
+  }
+
+  @Get('meta')
+  async meta(): Promise<{ readonly dataMode: DataMode }> {
+    return { dataMode: await this.store.getDataMode() };
   }
 }

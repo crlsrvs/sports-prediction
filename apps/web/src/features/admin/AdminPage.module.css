@@ -80,3 +80,22 @@
   color: var(--color-muted);
   text-decoration: none;
 }
+
+.resolveRow {
+  align-items: flex-start;
+}
+
+.resolveControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.resolveControls select {
+  min-width: 10rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: inherit;
+  padding: 0.35rem 0.5rem;
+}

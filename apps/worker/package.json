@@ -16,6 +16,7 @@
     "@sports-prediction/domain": "0.1.0",
     "@sports-prediction/features": "0.1.0",
     "@sports-prediction/prediction": "0.1.0",
+    "@sports-prediction/scraping": "0.1.0",
     "@sports-prediction/shared": "0.1.0",
     "bullmq": "^5.58.5",
     "ioredis": "^5.7.0"

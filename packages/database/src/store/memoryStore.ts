@@ -7,10 +7,14 @@ import {
   type Sport,
   type Team,
 } from '@sports-prediction/domain';
+import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import { createSeedData } from './seed.js';
 import type {
   AppStore,
+  DataMode,
   DataSourceRecord,
+  EntityAliasRecord,
+  RawRecord,
   ScrapingJobRecord,
   UnresolvedEntity,
 } from './types.js';
@@ -24,6 +28,8 @@ export class MemoryStore implements AppStore {
   private sources = new Map<string, DataSourceRecord>();
   private jobs: ScrapingJobRecord[] = [];
   private unresolved = new Map<string, UnresolvedEntity>();
+  private rawRecords: RawRecord[] = [];
+  private entityAliases = new Map<string, EntityAliasRecord>();
 
   static seeded(): MemoryStore {
     const store = new MemoryStore();
@@ -143,6 +149,13 @@ export class MemoryStore implements AppStore {
     return [...this.unresolved.values()];
   }
 
+  async addUnresolvedEntity(
+    entity: UnresolvedEntity,
+  ): Promise<UnresolvedEntity> {
+    this.unresolved.set(entity.id, entity);
+    return entity;
+  }
+
   async resolveEntity(input: {
     readonly unresolvedId: string;
     readonly teamId: string;
@@ -160,5 +173,43 @@ export class MemoryStore implements AppStore {
     this.teams.set(updated.id, updated);
     this.unresolved.delete(input.unresolvedId);
     return updated;
+  }
+
+  async saveRawRecord(record: RawRecord): Promise<RawRecord> {
+    this.rawRecords = [record, ...this.rawRecords.filter((item) => item.id !== record.id)];
+    return record;
+  }
+
+  async listRawRecords(limit = 50): Promise<readonly RawRecord[]> {
+    return this.rawRecords
+      .slice()
+      .sort((a, b) => b.fetchedAt.getTime() - a.fetchedAt.getTime())
+      .slice(0, limit);
+  }
+
+  async deleteRawRecordsOlderThan(cutoff: Date): Promise<number> {
+    const before = this.rawRecords.length;
+    this.rawRecords = this.rawRecords.filter(
+      (item) => item.fetchedAt.getTime() >= cutoff.getTime(),
+    );
+    return before - this.rawRecords.length;
+  }
+
+  async listEntityAliases(): Promise<readonly EntityAliasRecord[]> {
+    return [...this.entityAliases.values()];
+  }
+
+  async upsertEntityAlias(
+    alias: EntityAliasRecord,
+  ): Promise<EntityAliasRecord> {
+    this.entityAliases.set(alias.id, alias);
+    return alias;
+  }
+
+  async getDataMode(): Promise<DataMode> {
+    const hasLive = [...this.matches.values()].some(
+      (match) => String(match.sourceId) === API_FOOTBALL_SOURCE_ID,
+    );
+    return hasLive ? 'live' : 'seed';
   }
 }
