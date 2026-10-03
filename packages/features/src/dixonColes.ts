@@ -10,6 +10,14 @@ export interface DixonColesOptions {
    * newly promoted / rarely seen teams near the average instead of exploding.
    */
   readonly priorWeight?: number;
+  /**
+   * Shrinkage target for attack (1 = league average). Teams with little
+   * evidence (promoted sides, cup debutants) are typically below average, so a
+   * value under 1 is a better prior than the mean.
+   */
+  readonly priorAttack?: number;
+  /** Shrinkage target for defense as a multiple of league-average goals conceded. */
+  readonly priorDefense?: number;
   readonly iterations?: number;
 }
 
@@ -31,12 +39,16 @@ export interface DixonColesFit {
 }
 
 /**
- * Tuned on 2022–2024 PL/La Liga/UCL walk-forward backtests: Brier is flat for
- * half-lives between 365 and 730 days and best around a 6-match prior.
+ * Tuned on 2022–2024 walk-forward backtests (6 leagues as history, PL/La Liga/
+ * UCL as targets): Brier is flat for half-lives between 365 and 730 days, best
+ * around a 6-match prior, and a slightly below-average newcomer prior helps
+ * matches involving teams with thin history.
  */
 export const DEFAULT_DIXON_COLES_OPTIONS: Required<DixonColesOptions> = {
   halfLifeDays: 365,
   priorWeight: 6,
+  priorAttack: 0.9,
+  priorDefense: 1.1,
   iterations: 30,
 };
 
@@ -153,7 +165,7 @@ export function fitDixonColes(input: {
 
     for (let iteration = 0; iteration < options.iterations; iteration += 1) {
       // Attack update: alpha_i = sum(w * goals for) / sum(w * beta_opp * gamma?)
-      goalsFor.fill(prior * leagueAverageGoals);
+      goalsFor.fill(prior * leagueAverageGoals * options.priorAttack);
       rateFor.fill(prior * leagueAverageGoals);
       for (const o of observations) {
         goalsFor[o.home] = (goalsFor[o.home] ?? 0) + o.weight * o.homeGoals;
@@ -167,7 +179,7 @@ export function fitDixonColes(input: {
       }
 
       // Defense update: beta_i = sum(w * goals against) / sum(w * alpha_opp * gamma?)
-      goalsAgainst.fill(prior * leagueAverageGoals);
+      goalsAgainst.fill(prior * leagueAverageGoals * options.priorDefense);
       rateAgainst.fill(prior);
       for (const o of observations) {
         goalsAgainst[o.home] = (goalsAgainst[o.home] ?? 0) + o.weight * o.awayGoals;
@@ -221,7 +233,11 @@ export function fitDixonColes(input: {
   const ratingFor = (teamId: TeamId): TeamRating => {
     const index = teamIndex.get(String(teamId));
     if (index === undefined) {
-      return { attack: 1, defense: leagueAverageGoals, matches: 0 };
+      return {
+        attack: options.priorAttack,
+        defense: leagueAverageGoals * options.priorDefense,
+        matches: 0,
+      };
     }
     return {
       attack: attack[index] ?? 1,

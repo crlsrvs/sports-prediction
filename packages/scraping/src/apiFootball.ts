@@ -8,15 +8,48 @@ export const API_FOOTBALL_BASE_URL = 'https://v3.football.api-sports.io';
 /** Free API-Football plans currently expose historical seasons up to this year. */
 export const API_FOOTBALL_FREE_MAX_SEASON = 2024;
 
-/** API-Football league ids for MVP competitions. */
+/** API-Football league ids for every competition we ingest. */
 export const API_FOOTBALL_LEAGUES = {
   ucl: 2,
   premierLeague: 39,
   laLiga: 140,
+  bundesliga: 78,
+  serieA: 135,
+  ligue1: 61,
 } as const;
 
+export interface TrackedCompetition {
+  readonly leagueId: number;
+  readonly competitionId: string;
+  readonly name: string;
+  readonly country: string | null;
+  /**
+   * `featured` competitions are shown to end users (MVP scope).
+   * `support` competitions are ingested only so that opponents met in European
+   * cups carry opponent-adjusted ratings from their domestic results.
+   */
+  readonly role: 'featured' | 'support';
+}
+
+export const API_FOOTBALL_COMPETITIONS: readonly TrackedCompetition[] = [
+  { leagueId: API_FOOTBALL_LEAGUES.ucl, competitionId: 'comp-ucl', name: 'UEFA Champions League', country: null, role: 'featured' },
+  { leagueId: API_FOOTBALL_LEAGUES.premierLeague, competitionId: 'comp-pl', name: 'Premier League', country: 'England', role: 'featured' },
+  { leagueId: API_FOOTBALL_LEAGUES.laLiga, competitionId: 'comp-laliga', name: 'La Liga', country: 'Spain', role: 'featured' },
+  { leagueId: API_FOOTBALL_LEAGUES.bundesliga, competitionId: 'comp-bundesliga', name: 'Bundesliga', country: 'Germany', role: 'support' },
+  { leagueId: API_FOOTBALL_LEAGUES.serieA, competitionId: 'comp-seriea', name: 'Serie A', country: 'Italy', role: 'support' },
+  { leagueId: API_FOOTBALL_LEAGUES.ligue1, competitionId: 'comp-ligue1', name: 'Ligue 1', country: 'France', role: 'support' },
+];
+
+/** Leagues surfaced in the product (dashboard, daily scrape filter). */
 export const MVP_LEAGUE_IDS: ReadonlySet<number> = new Set(
-  Object.values(API_FOOTBALL_LEAGUES),
+  API_FOOTBALL_COMPETITIONS.filter((item) => item.role === 'featured').map(
+    (item) => item.leagueId,
+  ),
+);
+
+/** Every league ingested for modelling, featured or support. */
+export const TRACKED_LEAGUE_IDS: ReadonlySet<number> = new Set(
+  API_FOOTBALL_COMPETITIONS.map((item) => item.leagueId),
 );
 
 export type ApiFootballFetch = (
@@ -165,8 +198,8 @@ export class ApiFootballAdapter implements SourceAdapter {
   }
 
   /**
-   * Fetches full seasons for every MVP league, collecting warnings per league
-   * instead of failing the whole run.
+   * Fetches full seasons for every tracked league (featured + support),
+   * collecting warnings per league instead of failing the whole run.
    */
   async fetchMvpSeason(season: number): Promise<{
     readonly raw: readonly RawScrape[];
@@ -176,7 +209,7 @@ export class ApiFootballAdapter implements SourceAdapter {
     const raw: RawScrape[] = [];
     const fixtures: ApiFootballFixtureItem[] = [];
     const warnings: string[] = [];
-    for (const leagueId of Object.values(API_FOOTBALL_LEAGUES)) {
+    for (const leagueId of TRACKED_LEAGUE_IDS) {
       try {
         const result = await this.fetchSeasonFixtures({ leagueId, season });
         raw.push(result.raw);

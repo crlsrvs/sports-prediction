@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit home advantage, low-score correlation `rho` and league-average prior for
   thin histories. `FeatureSnapshot.ratings` carries the fitted ratings per match.
 
+- Support leagues (Bundesliga, Serie A, Ligue 1) ingested as inactive competitions so
+  European opponents carry opponent-adjusted ratings; public catalogue, dashboard,
+  backtests and regeneration only cover featured competitions.
+- Dixon-Coles newcomer prior (`priorAttack` 0.9 / `priorDefense` 1.1) for teams with
+  thin history; forced regeneration of predictions from Admin.
+
+### Fixed
+
+- Demo (seed) results no longer contaminate ratings or backtests once real data exists.
+
 ### Changed
 
 - Default prediction model is now `football-v3` (`football-v1`/`v2` kept for comparison).

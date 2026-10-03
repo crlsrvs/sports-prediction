@@ -7,7 +7,7 @@ import {
   asTeamId,
 } from '@sports-prediction/domain';
 import type { FinishedMatchResult } from './buildFeatureSnapshot.js';
-import { fitDixonColes } from './dixonColes.js';
+import { DEFAULT_DIXON_COLES_OPTIONS, fitDixonColes } from './dixonColes.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const START = new Date('2025-01-01T12:00:00.000Z').getTime();
@@ -88,10 +88,28 @@ describe('fitDixonColes', () => {
     // Assert
     expect(fit.matches).toBe(0);
     expect(fit.ratingFor(STRONG)).toEqual({
-      attack: 1,
-      defense: fit.leagueAverageGoals,
+      attack: DEFAULT_DIXON_COLES_OPTIONS.priorAttack,
+      defense: fit.leagueAverageGoals * DEFAULT_DIXON_COLES_OPTIONS.priorDefense,
       matches: 0,
     });
+  });
+
+  it('pulls unknown teams toward the newcomer prior, below league average', () => {
+    // Arrange
+    const history = buildHistory();
+    const cutoffAt = new Date(START + 400 * DAY);
+
+    // Act
+    const fit = fitDixonColes({
+      history,
+      cutoffAt,
+      options: { priorAttack: 0.8, priorDefense: 1.2 },
+    });
+    const newcomer = fit.ratingFor(asTeamId('newcomer'));
+
+    // Assert
+    expect(newcomer.attack).toBeCloseTo(0.8, 10);
+    expect(newcomer.defense).toBeCloseTo(fit.leagueAverageGoals * 1.2, 10);
   });
 
   it('keeps unknown teams at league average and reports zero support', () => {
@@ -105,7 +123,7 @@ describe('fitDixonColes', () => {
 
     // Assert
     expect(ratings.model).toBe('dixon-coles');
-    expect(ratings.homeAttack).toBe(1);
+    expect(ratings.homeAttack).toBe(DEFAULT_DIXON_COLES_OPTIONS.priorAttack);
     expect(ratings.homeMatches).toBe(0);
     expect(ratings.awayMatches).toBeGreaterThan(0);
   });

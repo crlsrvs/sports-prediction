@@ -168,9 +168,9 @@ export const api = {
     request<{ generated: number }>('/admin/predictions/generate', {
       method: 'POST',
     }),
-  regeneratePredictions: () =>
+  regeneratePredictions: (options: { force?: boolean } = {}) =>
     request<{ regenerated: number; modelVersion: string }>(
       '/admin/predictions/regenerate',
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify(options) },
     ),
 };

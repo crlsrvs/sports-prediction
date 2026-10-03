@@ -4,7 +4,11 @@ import {
   asPredictionId,
   type MatchContext,
 } from '@sports-prediction/domain';
-import { buildFeatureSnapshot, fitDixonColes } from '@sports-prediction/features';
+import {
+  buildFeatureSnapshot,
+  buildFinishedHistory,
+  fitDixonColes,
+} from '@sports-prediction/features';
 import {
   evaluatePrediction,
   predictionEngine,
@@ -13,6 +17,7 @@ import {
   createApiFootballAdapterFromEnv,
   ingestApiFootballFixtures,
   resolveApiFootballSeason,
+  trackedCompetitions,
 } from '@sports-prediction/scraping';
 
 import {
@@ -230,6 +235,16 @@ async function importSeason(
   const startedAt = new Date();
   const season = requestedSeason ?? resolveApiFootballSeason(startedAt);
   try {
+    // Make sure every tracked competition exists (support leagues are created
+    // inactive) without overriding admin-managed flags on existing ones.
+    const existingCompetitions = await store.listCompetitions();
+    const existingIds = new Set(existingCompetitions.map((item) => String(item.id)));
+    for (const competition of trackedCompetitions()) {
+      if (!existingIds.has(String(competition.id))) {
+        await store.upsertCompetition(competition);
+      }
+    }
+
     const { raw, fixtures, warnings } = await adapter.fetchMvpSeason(season);
 
     for (const scrape of raw) {
@@ -315,18 +330,7 @@ async function generatePredictions(
   const matches = await store.listMatches();
   const scheduled = matches.filter((match) => match.status === 'scheduled');
   const competitions = await store.listCompetitions();
-  const history = matches
-    .filter(
-      (item) =>
-        item.status === 'finished' &&
-        item.homeScore !== null &&
-        item.awayScore !== null,
-    )
-    .map((item) => ({
-      match: item,
-      homeScore: item.homeScore as number,
-      awayScore: item.awayScore as number,
-    }));
+  const history = buildFinishedHistory(matches);
 
   let generated = 0;
   for (const match of scheduled) {

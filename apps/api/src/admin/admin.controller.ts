@@ -309,8 +309,10 @@ export class AdminController {
   }
 
   @Post('predictions/regenerate')
-  regeneratePredictions() {
-    return this.analysisService.regenerateOutdatedPredictions();
+  regeneratePredictions(@Body() body: { readonly force?: boolean } = {}) {
+    return this.analysisService.regenerateOutdatedPredictions({
+      force: body?.force === true,
+    });
   }
 
   @Post('sports')

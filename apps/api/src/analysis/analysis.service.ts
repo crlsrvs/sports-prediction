@@ -15,6 +15,7 @@ import {
 } from '@sports-prediction/domain';
 import {
   buildFeatureSnapshot,
+  buildFinishedHistory,
   fitDixonColes,
   type DixonColesFit,
   type FinishedMatchResult,
@@ -80,7 +81,18 @@ export class AnalysisService {
   constructor(@Inject(STORE) private readonly store: AppStore) {}
 
   async listTodayCards(): Promise<readonly MatchCard[]> {
-    const matches = await this.store.listMatches();
+    const [allMatches, competitions] = await Promise.all([
+      this.store.listMatches(),
+      this.store.listCompetitions(),
+    ]);
+    // Support leagues (inactive competitions) feed the models but stay out of
+    // the public product.
+    const featuredCompetitionIds = new Set(
+      competitions.filter((item) => item.active).map((item) => String(item.id)),
+    );
+    const matches = allMatches.filter((match) =>
+      featuredCompetitionIds.has(String(match.competitionId)),
+    );
     const today = new Date();
     const start = new Date(today);
     start.setUTCHours(0, 0, 0, 0);
@@ -257,11 +269,14 @@ export class AnalysisService {
   }
 
   /**
-   * Re-generates predictions with the current default model for every match whose
-   * latest stored prediction comes from an older model version. New predictions
-   * are appended (old ones stay for reproducibility).
+   * Re-generates predictions with the current default model for every featured
+   * match whose latest stored prediction comes from an older model version
+   * (or for all of them when `force` is set, e.g. after the history changed).
+   * New predictions are appended (old ones stay for reproducibility).
    */
-  async regenerateOutdatedPredictions(): Promise<{
+  async regenerateOutdatedPredictions(
+    options: { readonly force?: boolean } = {},
+  ): Promise<{
     readonly regenerated: number;
     readonly modelVersion: string;
   }> {
@@ -276,11 +291,16 @@ export class AnalysisService {
       competitions.map((item) => [String(item.id), item]),
     );
 
+    const featuredIds = new Set(
+      competitions.filter((item) => item.active).map((item) => String(item.id)),
+    );
     const ratingsCache = new RatingsCache(history);
     let regenerated = 0;
     for (const match of matches) {
+      if (!featuredIds.has(String(match.competitionId))) continue;
       const latest = await this.store.getLatestPrediction(match.id);
-      if (!latest || latest.modelVersion === DEFAULT_MODEL_VERSION) continue;
+      if (!latest) continue;
+      if (!options.force && latest.modelVersion === DEFAULT_MODEL_VERSION) continue;
 
       const homeTeam = teamsById.get(String(match.homeTeamId));
       const awayTeam = teamsById.get(String(match.awayTeamId));
@@ -354,25 +374,19 @@ export class AnalysisService {
       competitions.map((item) => [String(item.id), item]),
     );
 
-    const history: FinishedMatchResult[] = matches
-      .filter(
-        (match) =>
-          match.status === 'finished' &&
-          match.homeScore !== null &&
-          match.awayScore !== null,
-      )
-      .map((match) => ({
-        match,
-        homeScore: match.homeScore as number,
-        awayScore: match.awayScore as number,
-      }))
-      .sort(
-        (a, b) => a.match.scheduledAt.getTime() - b.match.scheduledAt.getTime(),
-      );
+    const history = buildFinishedHistory(matches);
+    // Ratings learn from every tracked league, but we only score what the
+    // product shows (featured competitions) so metrics stay comparable.
+    const featuredIds = new Set(
+      competitions.filter((item) => item.active).map((item) => String(item.id)),
+    );
+    const targets = history.filter((item) =>
+      featuredIds.has(String(item.match.competitionId)),
+    );
 
     const ratingsCache = new RatingsCache(history);
     const samples: BacktestSample[] = [];
-    for (const target of history) {
+    for (const target of targets) {
       const match = target.match;
       // Simulate historical cutoff: 1 hour before kickoff.
       const dataCutoffAt = new Date(match.scheduledAt.getTime() - 60 * 60 * 1000);
@@ -459,18 +473,7 @@ export class AnalysisService {
 
   private async loadHistory(): Promise<FinishedMatchResult[]> {
     const matches = await this.store.listMatches();
-    return matches
-      .filter(
-        (match) =>
-          match.status === 'finished' &&
-          match.homeScore !== null &&
-          match.awayScore !== null,
-      )
-      .map((match) => ({
-        match,
-        homeScore: match.homeScore as number,
-        awayScore: match.awayScore as number,
-      }));
+    return buildFinishedHistory(matches);
   }
 
   private buildComparison(

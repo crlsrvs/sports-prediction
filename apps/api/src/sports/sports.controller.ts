@@ -12,9 +12,11 @@ export class SportsController {
     return this.store.listSports();
   }
 
+  /** Public catalogue: only featured (active) competitions. */
   @Get('competitions')
-  listCompetitions(): Promise<readonly Competition[]> {
-    return this.store.listCompetitions();
+  async listCompetitions(): Promise<readonly Competition[]> {
+    const competitions = await this.store.listCompetitions();
+    return competitions.filter((item) => item.active);
   }
 
   @Get('teams')

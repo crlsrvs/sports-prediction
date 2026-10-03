@@ -11,7 +11,7 @@ import {
 import { matchTeamByAlias } from '@sports-prediction/normalization';
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import {
-  API_FOOTBALL_LEAGUES,
+  API_FOOTBALL_COMPETITIONS,
   mapApiStatusToMatchStatus,
   type ApiFootballFixtureItem,
 } from './apiFootball.js';
@@ -19,11 +19,23 @@ import {
 const SPORT_ID = asSportId('sport-football');
 const SOURCE_ID = asDataSourceId(API_FOOTBALL_SOURCE_ID);
 
-const LEAGUE_TO_COMPETITION: Record<number, string> = {
-  [API_FOOTBALL_LEAGUES.ucl]: 'comp-ucl',
-  [API_FOOTBALL_LEAGUES.premierLeague]: 'comp-pl',
-  [API_FOOTBALL_LEAGUES.laLiga]: 'comp-laliga',
-};
+const LEAGUE_TO_COMPETITION: Record<number, string> = Object.fromEntries(
+  API_FOOTBALL_COMPETITIONS.map((item) => [item.leagueId, item.competitionId]),
+);
+
+/**
+ * Domain competitions for every tracked league. Support leagues are created
+ * inactive so they feed the models without appearing in the public product.
+ */
+export function trackedCompetitions(): Competition[] {
+  return API_FOOTBALL_COMPETITIONS.map((item) => ({
+    id: asCompetitionId(item.competitionId),
+    sportId: SPORT_ID,
+    name: item.name,
+    country: item.country,
+    active: item.role === 'featured',
+  }));
+}
 
 export interface IngestFixturesResult {
   readonly teamsToUpsert: Team[];

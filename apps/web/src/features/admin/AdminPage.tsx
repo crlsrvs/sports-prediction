@@ -135,11 +135,19 @@ export function AdminPage() {
         </button>
         <button
           type="button"
-          onClick={() => regenerate.mutate()}
+          onClick={() => regenerate.mutate({})}
           disabled={regenerate.isPending}
           title="Vuelve a generar las predicciones hechas con un modelo anterior"
         >
           {regenerate.isPending ? 'Regenerando…' : 'Regenerar con modelo actual'}
+        </button>
+        <button
+          type="button"
+          onClick={() => regenerate.mutate({ force: true })}
+          disabled={regenerate.isPending}
+          title="Regenera todas las predicciones aunque ya usen el modelo actual (útil tras importar historial nuevo)"
+        >
+          Regenerar todas (forzar)
         </button>
       </div>
 
