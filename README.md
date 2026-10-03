@@ -50,11 +50,19 @@ If PostgreSQL is unavailable, the API automatically falls back to a seeded in-me
 
 1. Set `API_FOOTBALL_KEY` in `.env` (optional: `API_FOOTBALL_SEASON=2024`).
 2. Start Redis (`docker compose up -d`) plus `npm run dev:api`, `npm run dev:worker`, and `npm run dev:web`.
-3. In Admin, **Probar** the API-Football source, then enqueue `scrape-source` and `generate-predictions`.
-4. The dashboard banner switches from seed demo to live when fixtures from that source exist.
+3. In Admin, **Probar** the API-Football source, then enqueue `import-season` for 2022, 2023 and 2024 (6 leagues each; wait ~1 min between them to respect the free-plan rate limit).
+4. Click **Regenerar todas (forzar)** so every prediction uses the full history.
+5. The dashboard banner switches from seed demo to live and shows the latest real matchday per league.
 
-**Free-plan limits:** only a ~3-day date window, no `last`/`next`, and seasons above 2024 are blocked. If PL/UCL/La Liga have no fixtures that day, the app stays on seed demo until a matchday or a paid plan.
+**Free-plan limits:** seasons 2022–2024 only, no current season, no `last`/`next`, `?date=` only within a ~3-day window. See [docs/onboarding/03-datos-e-ingesta.md](./docs/onboarding/03-datos-e-ingesta.md).
 
-## Agent / contributor rules
+### Prediction models
 
-See [`AGENTS.md`](./AGENTS.md). Architectural decisions live in [`docs/adr/`](./docs/adr/).
+`football-v3` (Dixon-Coles) is the default; `football-v1` and `football-v2` are kept for comparison. Run and compare backtests from Admin → *Evaluación de modelos*. Details in [docs/onboarding/04-motor-de-prediccion.md](./docs/onboarding/04-motor-de-prediccion.md).
+
+## Documentation
+
+- **New here? Start with the [developer onboarding guide](./docs/onboarding/README.md)** (setup, architecture, data pipeline, prediction engine, API, database, workflow, glossary).
+- Product requirements: [`docs/PRD.md`](./docs/PRD.md).
+- Architectural decisions: [`docs/adr/`](./docs/adr/).
+- Rules for contributors and AI agents: [`AGENTS.md`](./AGENTS.md).

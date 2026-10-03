@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dixon-Coles newcomer prior (`priorAttack` 0.9 / `priorDefense` 1.1) for teams with
   thin history; forced regeneration of predictions from Admin.
 
+- Developer onboarding guide in `docs/onboarding/` (setup, architecture, data pipeline,
+  prediction engine, API/frontend, database, workflow, glossary).
+
 ### Fixed
 
 - Demo (seed) results no longer contaminate ratings or backtests once real data exists.
