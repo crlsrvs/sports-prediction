@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import type { AppStore, DataSourceRecord } from '@sports-prediction/database';
 import {
@@ -19,6 +20,7 @@ import {
   type Sport,
   type Team,
 } from '@sports-prediction/domain';
+import { DEFAULT_MODEL_VERSION } from '@sports-prediction/prediction';
 import { createApiFootballAdapterFromEnv } from '@sports-prediction/scraping';
 import {
   API_FOOTBALL_SOURCE_ID,
@@ -228,15 +230,23 @@ export class AdminController {
 
   @Post('jobs')
   async enqueue(
-    @Body() body: { readonly name?: string },
+    @Body() body: { readonly name?: string; readonly season?: number | string },
   ): Promise<{ readonly jobId: string; readonly name: JobName }> {
     if (!body.name || !isJobName(body.name)) {
       throw new BadRequestException(
         `Job inválido. Permitidos: ${Object.values(JOB_NAMES).join(', ')}`,
       );
     }
+    const data: Record<string, unknown> = {};
+    if (body.season !== undefined && body.season !== '') {
+      const season = Number(body.season);
+      if (!Number.isInteger(season) || season < 2000 || season > 2100) {
+        throw new BadRequestException('Temporada inválida (ej. 2023)');
+      }
+      data['season'] = season;
+    }
     try {
-      return await enqueueJob(body.name);
+      return await enqueueJob(body.name, data);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new BadRequestException(
@@ -275,14 +285,32 @@ export class AdminController {
   }
 
   @Get('backtests')
-  runBacktest() {
-    return this.analysisService.runBacktest();
+  runBacktest(@Query('model') model?: string) {
+    return this.analysisService.runBacktest(model || undefined);
+  }
+
+  @Get('backtests/history')
+  listBacktests() {
+    return this.analysisService.listBacktestRuns();
+  }
+
+  @Get('models')
+  listModels(): { readonly default: string; readonly available: readonly string[] } {
+    return {
+      default: DEFAULT_MODEL_VERSION,
+      available: this.analysisService.listModels(),
+    };
   }
 
   @Post('predictions/generate')
   async generatePredictions() {
     const count = await this.analysisService.generateAllPredictions();
     return { generated: count };
+  }
+
+  @Post('predictions/regenerate')
+  regeneratePredictions() {
+    return this.analysisService.regenerateOutdatedPredictions();
   }
 
   @Post('sports')

@@ -63,6 +63,47 @@ export interface EntityAliasRecord {
 
 export type DataMode = 'seed' | 'live';
 
+export interface BacktestCompetitionMetrics {
+  readonly competitionId: string;
+  readonly competitionName: string;
+  readonly samples: number;
+  readonly winnerRate: number;
+  readonly exactScoreRate: number;
+  readonly brierScore: number | null;
+}
+
+export interface BacktestBaselineMetrics {
+  readonly label: string;
+  readonly winnerRate: number;
+  readonly brierScore: number;
+  readonly logLoss: number;
+}
+
+export interface BacktestCalibrationBucket {
+  readonly rangeStart: number;
+  readonly rangeEnd: number;
+  readonly samples: number;
+  readonly averageConfidence: number;
+  readonly observedAccuracy: number;
+}
+
+export interface BacktestRunRecord {
+  readonly id: string;
+  readonly modelVersion: string;
+  readonly ranAt: Date;
+  readonly samples: number;
+  readonly exactScoreRate: number;
+  readonly winnerRate: number;
+  readonly maeGoals: number;
+  readonly brierScore: number | null;
+  readonly logLoss: number | null;
+  readonly details: {
+    readonly byCompetition: readonly BacktestCompetitionMetrics[];
+    readonly baselines: readonly BacktestBaselineMetrics[];
+    readonly calibration: readonly BacktestCalibrationBucket[];
+  };
+}
+
 export interface AppStore {
   listSports(): Promise<readonly Sport[]>;
   upsertSport(sport: Sport): Promise<Sport>;
@@ -94,4 +135,6 @@ export interface AppStore {
   listEntityAliases(): Promise<readonly EntityAliasRecord[]>;
   upsertEntityAlias(alias: EntityAliasRecord): Promise<EntityAliasRecord>;
   getDataMode(): Promise<DataMode>;
+  saveBacktestRun(run: BacktestRunRecord): Promise<BacktestRunRecord>;
+  listBacktestRuns(limit?: number): Promise<readonly BacktestRunRecord[]>;
 }

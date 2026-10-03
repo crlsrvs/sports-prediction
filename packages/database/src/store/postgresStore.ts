@@ -12,6 +12,7 @@ import {
   type Match,
   type MatchId,
   type MatchStatus,
+  type OutcomeProbabilities,
   type Prediction,
   type PredictionFactor,
   type Sport,
@@ -22,6 +23,7 @@ import { createSeedData } from './seed.js';
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import type {
   AppStore,
+  BacktestRunRecord,
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
@@ -98,6 +100,32 @@ function mapPrediction(row: Record<string, unknown>): Prediction {
     },
     confidence: Number(row['confidence']),
     factors: (row['factors'] as PredictionFactor[]) ?? [],
+    outcomeProbabilities:
+      (row['outcome_probabilities'] as OutcomeProbabilities | null) ?? null,
+  };
+}
+
+function mapBacktestRun(row: Record<string, unknown>): BacktestRunRecord {
+  const details = (row['details'] as BacktestRunRecord['details'] | null) ?? {
+    byCompetition: [],
+    baselines: [],
+    calibration: [],
+  };
+  return {
+    id: String(row['id']),
+    modelVersion: String(row['model_version']),
+    ranAt: new Date(String(row['ran_at'])),
+    samples: Number(row['samples']),
+    exactScoreRate: Number(row['exact_score_rate']),
+    winnerRate: Number(row['winner_rate']),
+    maeGoals: Number(row['mae_goals']),
+    brierScore: row['brier_score'] == null ? null : Number(row['brier_score']),
+    logLoss: row['log_loss'] == null ? null : Number(row['log_loss']),
+    details: {
+      byCompetition: details.byCompetition ?? [],
+      baselines: details.baselines ?? [],
+      calibration: details.calibration ?? [],
+    },
   };
 }
 
@@ -108,6 +136,7 @@ export class PostgresStore implements AppStore {
     const migrationFiles = [
       '001_init.sql',
       '002_raw_and_aliases.sql',
+      '003_probabilities_and_backtests.sql',
     ] as const;
     for (const file of migrationFiles) {
       const sql = readFileSync(join(migrationsDir, file), 'utf8');
@@ -293,15 +322,17 @@ export class PostgresStore implements AppStore {
     await this.pool.query(
       `INSERT INTO predictions (
          id, match_id, generated_at, data_cutoff_at, model_version,
-         predicted_home, predicted_away, expected_home, expected_away, confidence, factors
+         predicted_home, predicted_away, expected_home, expected_away, confidence, factors,
+         outcome_probabilities
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb
        )
        ON CONFLICT (id) DO UPDATE SET
          predicted_home = EXCLUDED.predicted_home,
          predicted_away = EXCLUDED.predicted_away,
          confidence = EXCLUDED.confidence,
-         factors = EXCLUDED.factors`,
+         factors = EXCLUDED.factors,
+         outcome_probabilities = EXCLUDED.outcome_probabilities`,
       [
         prediction.id,
         prediction.matchId,
@@ -314,9 +345,43 @@ export class PostgresStore implements AppStore {
         prediction.expectedGoals.away,
         prediction.confidence,
         JSON.stringify(prediction.factors),
+        prediction.outcomeProbabilities
+          ? JSON.stringify(prediction.outcomeProbabilities)
+          : null,
       ],
     );
     return prediction;
+  }
+
+  async saveBacktestRun(run: BacktestRunRecord): Promise<BacktestRunRecord> {
+    await this.pool.query(
+      `INSERT INTO backtest_runs (
+         id, model_version, ran_at, samples, exact_score_rate, winner_rate,
+         mae_goals, brier_score, log_loss, details
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        run.id,
+        run.modelVersion,
+        run.ranAt.toISOString(),
+        run.samples,
+        run.exactScoreRate,
+        run.winnerRate,
+        run.maeGoals,
+        run.brierScore,
+        run.logLoss,
+        JSON.stringify(run.details),
+      ],
+    );
+    return run;
+  }
+
+  async listBacktestRuns(limit = 20): Promise<readonly BacktestRunRecord[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM backtest_runs ORDER BY ran_at DESC LIMIT $1',
+      [limit],
+    );
+    return result.rows.map((row) => mapBacktestRun(row));
   }
 
   async listSources(): Promise<readonly DataSourceRecord[]> {

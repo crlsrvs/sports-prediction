@@ -1,5 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { AppStore } from '@sports-prediction/database';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type { AppStore, BacktestRunRecord } from '@sports-prediction/database';
 import {
   asPredictionId,
   type FeatureSnapshot,
@@ -10,11 +15,15 @@ import {
 } from '@sports-prediction/domain';
 import { buildFeatureSnapshot, type FinishedMatchResult } from '@sports-prediction/features';
 import {
+  DEFAULT_MODEL_VERSION,
   evaluatePrediction,
+  getPredictionEngine,
+  listModelVersions,
   predictionEngine,
 } from '@sports-prediction/prediction';
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import { STORE } from '../store/store.tokens.js';
+import { summarizeBacktest, type BacktestSample } from './backtest.js';
 
 @Injectable()
 export class AnalysisService {
@@ -156,6 +165,7 @@ export class AnalysisService {
           expectedGoals: generated.value.expectedGoals,
           confidence: generated.value.confidence,
           factors: generated.value.factors,
+          outcomeProbabilities: generated.value.outcomeProbabilities,
         });
       }
     }
@@ -169,6 +179,7 @@ export class AnalysisService {
             prediction.predictedScore,
             match.homeScore,
             match.awayScore,
+            prediction.outcomeProbabilities,
           )
         : null;
 
@@ -196,39 +207,39 @@ export class AnalysisService {
     return count;
   }
 
-  async runBacktest(): Promise<{
-    readonly samples: number;
-    readonly exactScoreRate: number;
-    readonly winnerRate: number;
-    readonly maeGoals: number;
+  /**
+   * Re-generates predictions with the current default model for every match whose
+   * latest stored prediction comes from an older model version. New predictions
+   * are appended (old ones stay for reproducibility).
+   */
+  async regenerateOutdatedPredictions(): Promise<{
+    readonly regenerated: number;
+    readonly modelVersion: string;
   }> {
-    const matches = await this.store.listMatches();
-    const finished = matches.filter(
-      (match) =>
-        match.status === 'finished' &&
-        match.homeScore !== null &&
-        match.awayScore !== null,
+    const [matches, teams, competitions, history] = await Promise.all([
+      this.store.listMatches(),
+      this.store.listTeams(),
+      this.store.listCompetitions(),
+      this.loadHistory(),
+    ]);
+    const teamsById = new Map(teams.map((team) => [String(team.id), team]));
+    const competitionsById = new Map(
+      competitions.map((item) => [String(item.id), item]),
     );
 
-    let exact = 0;
-    let winners = 0;
-    let absError = 0;
-    let samples = 0;
+    let regenerated = 0;
+    for (const match of matches) {
+      const latest = await this.store.getLatestPrediction(match.id);
+      if (!latest || latest.modelVersion === DEFAULT_MODEL_VERSION) continue;
 
-    for (const match of finished) {
-      // Simulate historical cutoff: 1 hour before kickoff.
-      const dataCutoffAt = new Date(match.scheduledAt.getTime() - 60 * 60 * 1000);
-      const history = (await this.loadHistory()).filter(
-        (item) => item.match.scheduledAt.getTime() < dataCutoffAt.getTime(),
-      );
-      const homeTeam = await this.store.getTeam(match.homeTeamId);
-      const awayTeam = await this.store.getTeam(match.awayTeamId);
-      const competitions = await this.store.listCompetitions();
-      const competition = competitions.find(
-        (item) => item.id === match.competitionId,
-      );
+      const homeTeam = teamsById.get(String(match.homeTeamId));
+      const awayTeam = teamsById.get(String(match.awayTeamId));
+      const competition = competitionsById.get(String(match.competitionId));
       if (!homeTeam || !awayTeam || !competition) continue;
 
+      const dataCutoffAt = new Date(
+        Math.min(Date.now(), match.scheduledAt.getTime() - 5 * 60 * 1000),
+      );
       const featureSnapshot = buildFeatureSnapshot({
         matchId: match.id,
         homeTeamId: match.homeTeamId,
@@ -237,39 +248,141 @@ export class AnalysisService {
         dataCutoffAt,
         history,
       });
-
       const result = predictionEngine.predict(
-        {
-          match,
-          competition,
-          homeTeam,
-          awayTeam,
-          featureSnapshot,
-          dataCutoffAt,
-        },
+        { match, competition, homeTeam, awayTeam, featureSnapshot, dataCutoffAt },
+        featureSnapshot,
+      );
+      if (!result.ok) continue;
+
+      await this.store.savePrediction({
+        id: asPredictionId(`pred-${match.id}-${Date.now()}-${regenerated}`),
+        matchId: match.id,
+        generatedAt: new Date(),
+        dataCutoffAt,
+        modelVersion: result.value.modelVersion,
+        predictedScore: result.value.predictedScore,
+        expectedGoals: result.value.expectedGoals,
+        confidence: result.value.confidence,
+        factors: result.value.factors,
+        outcomeProbabilities: result.value.outcomeProbabilities,
+      });
+      regenerated += 1;
+    }
+
+    return { regenerated, modelVersion: DEFAULT_MODEL_VERSION };
+  }
+
+  listModels(): readonly string[] {
+    return listModelVersions();
+  }
+
+  /**
+   * Walk-forward backtest: for every finished match, rebuild features using only
+   * data before kickoff, predict with the requested model and compare with the
+   * real result. Results are persisted per model version for comparison.
+   */
+  async runBacktest(
+    modelVersion: string = DEFAULT_MODEL_VERSION,
+  ): Promise<BacktestRunRecord> {
+    if (!listModelVersions().includes(modelVersion)) {
+      throw new BadRequestException(
+        `Modelo desconocido: ${modelVersion}. Disponibles: ${listModelVersions().join(', ')}`,
+      );
+    }
+    const engine = getPredictionEngine(modelVersion);
+
+    const [matches, teams, competitions] = await Promise.all([
+      this.store.listMatches(),
+      this.store.listTeams(),
+      this.store.listCompetitions(),
+    ]);
+    const teamsById = new Map(teams.map((team) => [String(team.id), team]));
+    const competitionsById = new Map(
+      competitions.map((item) => [String(item.id), item]),
+    );
+
+    const history: FinishedMatchResult[] = matches
+      .filter(
+        (match) =>
+          match.status === 'finished' &&
+          match.homeScore !== null &&
+          match.awayScore !== null,
+      )
+      .map((match) => ({
+        match,
+        homeScore: match.homeScore as number,
+        awayScore: match.awayScore as number,
+      }))
+      .sort(
+        (a, b) => a.match.scheduledAt.getTime() - b.match.scheduledAt.getTime(),
+      );
+
+    const samples: BacktestSample[] = [];
+    for (const target of history) {
+      const match = target.match;
+      // Simulate historical cutoff: 1 hour before kickoff.
+      const dataCutoffAt = new Date(match.scheduledAt.getTime() - 60 * 60 * 1000);
+      const priorHistory = history.filter(
+        (item) => item.match.scheduledAt.getTime() < dataCutoffAt.getTime(),
+      );
+      const homeTeam = teamsById.get(String(match.homeTeamId));
+      const awayTeam = teamsById.get(String(match.awayTeamId));
+      const competition = competitionsById.get(String(match.competitionId));
+      if (!homeTeam || !awayTeam || !competition) continue;
+
+      const featureSnapshot = buildFeatureSnapshot({
+        matchId: match.id,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId,
+        matchScheduledAt: match.scheduledAt,
+        dataCutoffAt,
+        history: priorHistory,
+      });
+
+      const result = engine.predict(
+        { match, competition, homeTeam, awayTeam, featureSnapshot, dataCutoffAt },
         featureSnapshot,
       );
       if (!result.ok) continue;
 
       const evaluation = evaluatePrediction(
         result.value.predictedScore,
-        match.homeScore as number,
-        match.awayScore as number,
+        target.homeScore,
+        target.awayScore,
+        result.value.outcomeProbabilities,
       );
-      samples += 1;
-      if (evaluation.exactScore) exact += 1;
-      if (evaluation.winnerImpliedMatch) winners += 1;
-      absError +=
-        Math.abs(evaluation.predictedHome - evaluation.actualHome) +
-        Math.abs(evaluation.predictedAway - evaluation.actualAway);
+      samples.push({
+        competitionId: String(competition.id),
+        competitionName: competition.name,
+        confidence: result.value.confidence,
+        evaluation,
+        actualOutcome: evaluation.actualOutcome,
+      });
     }
 
-    return {
-      samples,
-      exactScoreRate: samples === 0 ? 0 : exact / samples,
-      winnerRate: samples === 0 ? 0 : winners / samples,
-      maeGoals: samples === 0 ? 0 : absError / samples,
+    const summary = summarizeBacktest(samples);
+    const run: BacktestRunRecord = {
+      id: `backtest-${crypto.randomUUID()}`,
+      modelVersion,
+      ranAt: new Date(),
+      samples: summary.samples,
+      exactScoreRate: summary.exactScoreRate,
+      winnerRate: summary.winnerRate,
+      maeGoals: summary.maeGoals,
+      brierScore: summary.brierScore,
+      logLoss: summary.logLoss,
+      details: {
+        byCompetition: summary.byCompetition,
+        baselines: summary.baselines,
+        calibration: summary.calibration,
+      },
     };
+    await this.store.saveBacktestRun(run);
+    return run;
+  }
+
+  listBacktestRuns(limit = 20): Promise<readonly BacktestRunRecord[]> {
+    return this.store.listBacktestRuns(limit);
   }
 
   private async toCard(matchId: string): Promise<MatchCard | null> {

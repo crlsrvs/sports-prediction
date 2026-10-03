@@ -10,7 +10,11 @@ async function bootstrap(): Promise<void> {
 
   const worker = new Worker(
     DEFAULT_QUEUE_NAME,
-    async (job) => runPipelineJob(job.name as JobName),
+    async (job) =>
+      runPipelineJob(
+        job.name as JobName,
+        (job.data ?? {}) as Record<string, unknown>,
+      ),
     { connection },
   );
 

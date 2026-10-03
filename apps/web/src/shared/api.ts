@@ -47,6 +47,52 @@ export interface TestSourceResult {
   readonly detail: string;
 }
 
+export interface BacktestCompetitionDto {
+  readonly competitionId: string;
+  readonly competitionName: string;
+  readonly samples: number;
+  readonly winnerRate: number;
+  readonly exactScoreRate: number;
+  readonly brierScore: number | null;
+}
+
+export interface BacktestBaselineDto {
+  readonly label: string;
+  readonly winnerRate: number;
+  readonly brierScore: number;
+  readonly logLoss: number;
+}
+
+export interface BacktestCalibrationDto {
+  readonly rangeStart: number;
+  readonly rangeEnd: number;
+  readonly samples: number;
+  readonly averageConfidence: number;
+  readonly observedAccuracy: number;
+}
+
+export interface BacktestRunDto {
+  readonly id: string;
+  readonly modelVersion: string;
+  readonly ranAt: string;
+  readonly samples: number;
+  readonly exactScoreRate: number;
+  readonly winnerRate: number;
+  readonly maeGoals: number;
+  readonly brierScore: number | null;
+  readonly logLoss: number | null;
+  readonly details: {
+    readonly byCompetition: readonly BacktestCompetitionDto[];
+    readonly baselines: readonly BacktestBaselineDto[];
+    readonly calibration: readonly BacktestCalibrationDto[];
+  };
+}
+
+export interface ModelsDto {
+  readonly default: string;
+  readonly available: readonly string[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     headers: {
@@ -95,10 +141,10 @@ export const api = {
   getSources: () => request<DataSourceDto[]>('/admin/sources'),
   testSource: (id: string) =>
     request<TestSourceResult>(`/admin/sources/${id}/test`, { method: 'POST' }),
-  enqueueJob: (name: string) =>
+  enqueueJob: (input: { name: string; season?: number }) =>
     request<{ jobId: string; name: string }>('/admin/jobs', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(input),
     }),
   getJobs: () => request<ScrapingJobDto[]>('/admin/scraping/jobs'),
   getUnresolved: () => request<UnresolvedEntityDto[]>('/admin/entities/unresolved'),
@@ -112,15 +158,19 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getPredictions: () => request<Prediction[]>('/admin/predictions'),
-  runBacktest: () =>
-    request<{
-      samples: number;
-      exactScoreRate: number;
-      winnerRate: number;
-      maeGoals: number;
-    }>('/admin/backtests'),
+  runBacktest: (model?: string) =>
+    request<BacktestRunDto>(
+      model ? `/admin/backtests?model=${encodeURIComponent(model)}` : '/admin/backtests',
+    ),
+  getBacktestHistory: () => request<BacktestRunDto[]>('/admin/backtests/history'),
+  getModels: () => request<ModelsDto>('/admin/models'),
   generatePredictions: () =>
     request<{ generated: number }>('/admin/predictions/generate', {
       method: 'POST',
     }),
+  regeneratePredictions: () =>
+    request<{ regenerated: number; modelVersion: string }>(
+      '/admin/predictions/regenerate',
+      { method: 'POST' },
+    ),
 };

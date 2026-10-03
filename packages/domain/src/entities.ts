@@ -75,6 +75,15 @@ export interface ExpectedGoals {
   readonly away: number;
 }
 
+export type MatchOutcome = 'home' | 'draw' | 'away';
+
+/** Probabilities for each 1X2 outcome; they sum to ~1. */
+export interface OutcomeProbabilities {
+  readonly home: number;
+  readonly draw: number;
+  readonly away: number;
+}
+
 export interface Prediction {
   readonly id: PredictionId;
   readonly matchId: MatchId;
@@ -86,6 +95,8 @@ export interface Prediction {
   readonly expectedGoals: ExpectedGoals;
   readonly confidence: number;
   readonly factors: readonly PredictionFactor[];
+  /** Null for models that do not produce a score distribution. */
+  readonly outcomeProbabilities: OutcomeProbabilities | null;
 }
 
 export interface FeatureSnapshot {

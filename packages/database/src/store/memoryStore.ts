@@ -11,6 +11,7 @@ import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import { createSeedData } from './seed.js';
 import type {
   AppStore,
+  BacktestRunRecord,
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
@@ -30,6 +31,7 @@ export class MemoryStore implements AppStore {
   private unresolved = new Map<string, UnresolvedEntity>();
   private rawRecords: RawRecord[] = [];
   private entityAliases = new Map<string, EntityAliasRecord>();
+  private backtestRuns: BacktestRunRecord[] = [];
 
   static seeded(): MemoryStore {
     const store = new MemoryStore();
@@ -211,5 +213,16 @@ export class MemoryStore implements AppStore {
       (match) => String(match.sourceId) === API_FOOTBALL_SOURCE_ID,
     );
     return hasLive ? 'live' : 'seed';
+  }
+
+  async saveBacktestRun(run: BacktestRunRecord): Promise<BacktestRunRecord> {
+    this.backtestRuns = [run, ...this.backtestRuns.filter((item) => item.id !== run.id)];
+    return run;
+  }
+
+  async listBacktestRuns(limit = 20): Promise<readonly BacktestRunRecord[]> {
+    return [...this.backtestRuns]
+      .sort((a, b) => b.ranAt.getTime() - a.ranAt.getTime())
+      .slice(0, limit);
   }
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../../shared/api.js';
 import styles from './AdminPage.module.css';
+import { BacktestPanel } from './BacktestPanel.js';
 
 const ENQUEUEABLE_JOBS = [
   'discover-todays-matches',
@@ -19,6 +20,7 @@ export function AdminPage() {
   const [resolveMap, setResolveMap] = useState<Record<string, string>>({});
   const [lastJobMessage, setLastJobMessage] = useState<string | null>(null);
   const [lastTestDetail, setLastTestDetail] = useState<string | null>(null);
+  const [importSeasonYear, setImportSeasonYear] = useState<string>('2024');
 
   const health = useQuery({
     queryKey: ['admin', 'health'],
@@ -60,15 +62,25 @@ export function AdminPage() {
     },
   });
 
-  const backtest = useMutation({
-    mutationFn: api.runBacktest,
-  });
-
   const generate = useMutation({
     mutationFn: api.generatePredictions,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['admin'] });
       await queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+
+  const regenerate = useMutation({
+    mutationFn: api.regeneratePredictions,
+    onSuccess: async (result) => {
+      setLastJobMessage(
+        `Regeneradas ${result.regenerated} predicciones con ${result.modelVersion}`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ['admin'] });
+      await queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+    onError: (error: Error) => {
+      setLastJobMessage(error.message);
     },
   });
 
@@ -123,36 +135,55 @@ export function AdminPage() {
         </button>
         <button
           type="button"
-          onClick={() => backtest.mutate()}
-          disabled={backtest.isPending}
+          onClick={() => regenerate.mutate()}
+          disabled={regenerate.isPending}
+          title="Vuelve a generar las predicciones hechas con un modelo anterior"
         >
-          Ejecutar backtesting
+          {regenerate.isPending ? 'Regenerando…' : 'Regenerar con modelo actual'}
         </button>
       </div>
 
       <h2>Jobs en cola</h2>
       <div className={styles.actions}>
-        {ENQUEUEABLE_JOBS.map((name) => (
-          <button
-            key={name}
-            type="button"
-            onClick={() => enqueue.mutate(name)}
-            disabled={enqueue.isPending}
-          >
-            {name}
-          </button>
-        ))}
+        {ENQUEUEABLE_JOBS.map((name) =>
+          name === 'import-season' ? (
+            <span key={name} className={styles.jobWithInput}>
+              <input
+                type="number"
+                min={2022}
+                max={2024}
+                value={importSeasonYear}
+                onChange={(event) => setImportSeasonYear(event.target.value)}
+                aria-label="Temporada a importar"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  enqueue.mutate({
+                    name,
+                    season: Number(importSeasonYear),
+                  })
+                }
+                disabled={enqueue.isPending || !importSeasonYear}
+              >
+                {name}
+              </button>
+            </span>
+          ) : (
+            <button
+              key={name}
+              type="button"
+              onClick={() => enqueue.mutate({ name })}
+              disabled={enqueue.isPending}
+            >
+              {name}
+            </button>
+          ),
+        )}
       </div>
       {lastJobMessage ? <p className={styles.message}>{lastJobMessage}</p> : null}
 
-      {backtest.data ? (
-        <p className={styles.message}>
-          Backtest · samples {backtest.data.samples} · exact{' '}
-          {(backtest.data.exactScoreRate * 100).toFixed(1)}% · winner{' '}
-          {(backtest.data.winnerRate * 100).toFixed(1)}% · MAE{' '}
-          {backtest.data.maeGoals.toFixed(2)}
-        </p>
-      ) : null}
+      <BacktestPanel />
 
       <h2>Fuentes</h2>
       {lastTestDetail ? (
@@ -254,6 +285,9 @@ export function AdminPage() {
               <span>
                 {prediction.matchId} · {prediction.confidence}% ·{' '}
                 {prediction.modelVersion}
+                {prediction.outcomeProbabilities
+                  ? ` · 1X2 ${Math.round(prediction.outcomeProbabilities.home * 100)}/${Math.round(prediction.outcomeProbabilities.draw * 100)}/${Math.round(prediction.outcomeProbabilities.away * 100)}`
+                  : ''}
               </span>
             </div>
             <Link to={`/matches/${prediction.matchId}`}>Ver</Link>

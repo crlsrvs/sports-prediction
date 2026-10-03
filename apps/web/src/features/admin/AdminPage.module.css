@@ -53,6 +53,19 @@
   cursor: pointer;
 }
 
+.jobWithInput {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.jobWithInput input {
+  width: 5.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: inherit;
+  padding: 0.35rem 0.5rem;
+}
+
 .list {
   list-style: none;
   margin: 0 0 1.5rem;

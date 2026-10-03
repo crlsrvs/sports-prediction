@@ -25,6 +25,7 @@ import { JOB_NAMES } from './queues.js';
 
 export async function runPipelineJob(
   name: JobName,
+  data: Record<string, unknown> = {},
 ): Promise<{ readonly ok: true; readonly detail: string }> {
   const { store } = await createAppStore();
 
@@ -37,7 +38,7 @@ export async function runPipelineJob(
     case JOB_NAMES.SCRAPE_SOURCE:
       return scrapeSource(store);
     case JOB_NAMES.IMPORT_SEASON:
-      return importSeason(store);
+      return importSeason(store, parseSeason(data['season']));
     case JOB_NAMES.NORMALIZE_SOURCE_DATA:
       return {
         ok: true,
@@ -211,6 +212,7 @@ async function scrapeSource(
  */
 async function importSeason(
   store: AppStore,
+  requestedSeason: number | null,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
   const sources = await store.listSources();
   const apiSource =
@@ -226,7 +228,7 @@ async function importSeason(
   }
 
   const startedAt = new Date();
-  const season = resolveApiFootballSeason(startedAt);
+  const season = requestedSeason ?? resolveApiFootballSeason(startedAt);
   try {
     const { raw, fixtures, warnings } = await adapter.fetchMvpSeason(season);
 
@@ -369,6 +371,7 @@ async function generatePredictions(
       expectedGoals: result.value.expectedGoals,
       confidence: result.value.confidence,
       factors: result.value.factors,
+      outcomeProbabilities: result.value.outcomeProbabilities,
     });
     generated += 1;
   }
@@ -394,10 +397,18 @@ async function evaluatePredictions(
       prediction.predictedScore,
       match.homeScore as number,
       match.awayScore as number,
+      prediction.outcomeProbabilities,
     );
     evaluated += 1;
   }
   return { ok: true, detail: `evaluated:${evaluated}` };
+}
+
+function parseSeason(value: unknown): number | null {
+  const season = Number(value);
+  return Number.isInteger(season) && season >= 2000 && season <= 2100
+    ? season
+    : null;
 }
 
 function isSameUtcDay(date: Date, now: Date): boolean {

@@ -2,6 +2,7 @@ import type {
   ExpectedGoals,
   FeatureSnapshot,
   MatchContext,
+  OutcomeProbabilities,
   PredictedScore,
   PredictionFactor,
 } from '@sports-prediction/domain';
@@ -20,6 +21,7 @@ export interface PredictionOutput {
   readonly confidence: number;
   readonly factors: readonly PredictionFactor[];
   readonly modelVersion: string;
+  readonly outcomeProbabilities: OutcomeProbabilities | null;
 }
 
 const HOME_ADVANTAGE = 0.18;
@@ -178,9 +180,6 @@ export function predict(
     confidence: computeConfidence(featureSnapshot),
     factors: buildFactors(context, expectedGoals),
     modelVersion: FOOTBALL_MODEL_VERSION,
+    outcomeProbabilities: null,
   });
 }
-
-export const predictionEngine = {
-  predict,
-};

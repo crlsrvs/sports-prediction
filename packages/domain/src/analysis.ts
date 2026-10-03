@@ -2,6 +2,7 @@ import type {
   Competition,
   FeatureSnapshot,
   Match,
+  MatchOutcome,
   Prediction,
   Team,
 } from './entities.js';
@@ -19,6 +20,12 @@ export interface PredictionEvaluation {
   readonly actualAway: number;
   readonly exactScore: boolean;
   readonly winnerImpliedMatch: boolean;
+  readonly predictedOutcome: MatchOutcome;
+  readonly actualOutcome: MatchOutcome;
+  /** Multi-class Brier score (0 best, 2 worst); null without probabilities. */
+  readonly brierScore: number | null;
+  /** Negative log-likelihood of the actual outcome; null without probabilities. */
+  readonly logLoss: number | null;
 }
 
 export interface MatchCard {

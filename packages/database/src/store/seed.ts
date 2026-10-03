@@ -294,6 +294,7 @@ export function createSeedData(): SeedData {
         explanation: 'Atlético Madrid tiene ventaja de local',
       },
     ],
+    outcomeProbabilities: null,
   };
 
   return {

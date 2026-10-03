@@ -1,0 +1,80 @@
+.panel {
+  margin: 1.5rem 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.hint,
+.error {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #ff8a80;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.controls label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.controls select {
+  min-width: 10rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: inherit;
+  padding: 0.4rem 0.5rem;
+}
+
+.controls button {
+  border: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.details {
+  display: grid;
+  gap: 1rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table caption {
+  text-align: left;
+  color: var(--color-muted);
+  padding-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.table th {
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.active td {
+  color: var(--color-accent);
+}

@@ -6,6 +6,10 @@ export { PostgresStore } from './store/postgresStore.js';
 export { createSeedData } from './store/seed.js';
 export type {
   AppStore,
+  BacktestBaselineMetrics,
+  BacktestCalibrationBucket,
+  BacktestCompetitionMetrics,
+  BacktestRunRecord,
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
