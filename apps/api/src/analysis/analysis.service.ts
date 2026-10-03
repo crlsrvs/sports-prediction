@@ -13,7 +13,12 @@ import {
   type MatchContext,
   type TeamComparisonMetric,
 } from '@sports-prediction/domain';
-import { buildFeatureSnapshot, type FinishedMatchResult } from '@sports-prediction/features';
+import {
+  buildFeatureSnapshot,
+  fitDixonColes,
+  type DixonColesFit,
+  type FinishedMatchResult,
+} from '@sports-prediction/features';
 import {
   DEFAULT_MODEL_VERSION,
   evaluatePrediction,
@@ -24,6 +29,51 @@ import {
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import { STORE } from '../store/store.tokens.js';
 import { summarizeBacktest, type BacktestSample } from './backtest.js';
+
+function describeUnavailable(
+  reason: 'missing_minimum_data' | 'missing_ratings' | 'invalid_cutoff',
+): string {
+  switch (reason) {
+    case 'missing_minimum_data':
+      return 'Faltan datos obligatorios para generar el análisis';
+    case 'missing_ratings':
+      return 'No hay suficiente historial para calcular los ratings de los equipos';
+    case 'invalid_cutoff':
+      return 'La ventana temporal de datos no es válida';
+  }
+}
+
+/**
+ * Dixon-Coles fits depend only on the set of results before the cutoff, so
+ * cutoffs that see the same number of prior matches share one fit. This keeps
+ * walk-forward backtests at one fit per distinct cutoff instead of per match.
+ */
+class RatingsCache {
+  private readonly fits = new Map<number, DixonColesFit>();
+  private readonly sortedTimes: number[];
+
+  constructor(private readonly history: readonly FinishedMatchResult[]) {
+    this.sortedTimes = history
+      .map((item) => item.match.scheduledAt.getTime())
+      .sort((a, b) => a - b);
+  }
+
+  fitFor(cutoffAt: Date): DixonColesFit {
+    const cutoffMs = cutoffAt.getTime();
+    let priorCount = 0;
+    while (
+      priorCount < this.sortedTimes.length &&
+      (this.sortedTimes[priorCount] ?? Infinity) < cutoffMs
+    ) {
+      priorCount += 1;
+    }
+    const cached = this.fits.get(priorCount);
+    if (cached) return cached;
+    const fit = fitDixonColes({ history: this.history, cutoffAt });
+    this.fits.set(priorCount, fit);
+    return fit;
+  }
+}
 
 @Injectable()
 export class AnalysisService {
@@ -126,6 +176,7 @@ export class AnalysisService {
     );
 
     const history = await this.loadHistory();
+    const ratings = fitDixonColes({ history, cutoffAt: dataCutoffAt });
     const featureSnapshot = buildFeatureSnapshot({
       matchId: match.id,
       homeTeamId: match.homeTeamId,
@@ -133,6 +184,7 @@ export class AnalysisService {
       matchScheduledAt: match.scheduledAt,
       dataCutoffAt,
       history,
+      ratings: ratings.matchRatings(match.homeTeamId, match.awayTeamId),
     });
 
     const context: MatchContext = {
@@ -150,10 +202,7 @@ export class AnalysisService {
     if (!prediction) {
       const generated = predictionEngine.predict(context, featureSnapshot);
       if (!generated.ok) {
-        unavailableReason =
-          generated.error === 'missing_minimum_data'
-            ? 'Faltan datos obligatorios para generar el análisis'
-            : 'La ventana temporal de datos no es válida';
+        unavailableReason = describeUnavailable(generated.error);
       } else {
         prediction = await this.store.savePrediction({
           id: asPredictionId(`pred-${match.id}-${Date.now()}`),
@@ -227,6 +276,7 @@ export class AnalysisService {
       competitions.map((item) => [String(item.id), item]),
     );
 
+    const ratingsCache = new RatingsCache(history);
     let regenerated = 0;
     for (const match of matches) {
       const latest = await this.store.getLatestPrediction(match.id);
@@ -247,6 +297,9 @@ export class AnalysisService {
         matchScheduledAt: match.scheduledAt,
         dataCutoffAt,
         history,
+        ratings: ratingsCache
+          .fitFor(dataCutoffAt)
+          .matchRatings(match.homeTeamId, match.awayTeamId),
       });
       const result = predictionEngine.predict(
         { match, competition, homeTeam, awayTeam, featureSnapshot, dataCutoffAt },
@@ -317,6 +370,7 @@ export class AnalysisService {
         (a, b) => a.match.scheduledAt.getTime() - b.match.scheduledAt.getTime(),
       );
 
+    const ratingsCache = new RatingsCache(history);
     const samples: BacktestSample[] = [];
     for (const target of history) {
       const match = target.match;
@@ -337,6 +391,9 @@ export class AnalysisService {
         matchScheduledAt: match.scheduledAt,
         dataCutoffAt,
         history: priorHistory,
+        ratings: ratingsCache
+          .fitFor(dataCutoffAt)
+          .matchRatings(match.homeTeamId, match.awayTeamId),
       });
 
       const result = engine.predict(
@@ -420,17 +477,35 @@ export class AnalysisService {
     snapshot: FeatureSnapshot | null,
   ): TeamComparisonMetric[] {
     if (!snapshot) return [];
+    const ratings = snapshot.ratings;
+    const average = ratings?.leagueAverageGoals ?? 1;
+    const strengthRows: TeamComparisonMetric[] = ratings
+      ? [
+          {
+            label: 'Ataque (ajustado por rival)',
+            homeValue: Number(ratings.homeAttack.toFixed(2)),
+            awayValue: Number(ratings.awayAttack.toFixed(2)),
+          },
+          {
+            label: 'Defensa (ajustado por rival)',
+            homeValue: Number((2 * average - ratings.homeDefense).toFixed(2)),
+            awayValue: Number((2 * average - ratings.awayDefense).toFixed(2)),
+          },
+        ]
+      : [
+          {
+            label: 'Ataque',
+            homeValue: snapshot.homeAttack,
+            awayValue: snapshot.awayAttack,
+          },
+          {
+            label: 'Defensa',
+            homeValue: 2 - snapshot.homeDefense,
+            awayValue: 2 - snapshot.awayDefense,
+          },
+        ];
     return [
-      {
-        label: 'Ataque',
-        homeValue: snapshot.homeAttack,
-        awayValue: snapshot.awayAttack,
-      },
-      {
-        label: 'Defensa',
-        homeValue: 2 - snapshot.homeDefense,
-        awayValue: 2 - snapshot.awayDefense,
-      },
+      ...strengthRows,
       {
         label: 'Forma reciente',
         homeValue: snapshot.homeForm.filter((item) => item === 'W').length,

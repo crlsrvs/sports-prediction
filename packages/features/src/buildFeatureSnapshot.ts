@@ -1,4 +1,10 @@
-import type { FeatureSnapshot, Match, MatchId, TeamId } from '@sports-prediction/domain';
+import type {
+  FeatureSnapshot,
+  Match,
+  MatchId,
+  MatchRatings,
+  TeamId,
+} from '@sports-prediction/domain';
 
 export interface FinishedMatchResult {
   readonly match: Match;
@@ -101,6 +107,8 @@ export function buildFeatureSnapshot(input: {
   readonly injuryImpactAway?: number;
   readonly squadChangeHome?: number;
   readonly squadChangeAway?: number;
+  /** Pre-fitted team ratings (see `fitDixonColes`); must respect the same cutoff. */
+  readonly ratings?: MatchRatings | null;
 }): FeatureSnapshot {
   const {
     matchId,
@@ -144,5 +152,20 @@ export function buildFeatureSnapshot(input: {
     squadChangeHome: input.squadChangeHome ?? 0,
     squadChangeAway: input.squadChangeAway ?? 0,
     dataCompleteness: Math.min(0.95, dataCompleteness),
+    ratings: input.ratings ?? null,
   };
+}
+
+/**
+ * Convenience for callers that want ratings and the snapshot in one step.
+ * Backtests should instead fit once per cutoff and pass `ratings` directly.
+ */
+export function buildFeatureSnapshotWithRatings(
+  input: Parameters<typeof buildFeatureSnapshot>[0],
+  fit: { matchRatings(home: TeamId, away: TeamId): MatchRatings },
+): FeatureSnapshot {
+  return buildFeatureSnapshot({
+    ...input,
+    ratings: fit.matchRatings(input.homeTeamId, input.awayTeamId),
+  });
 }

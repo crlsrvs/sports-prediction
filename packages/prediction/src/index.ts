@@ -11,6 +11,7 @@ export {
   type PredictionUnavailableReason,
 } from './footballV1.js';
 export { FOOTBALL_V2_MODEL_VERSION, predictV2 } from './footballV2.js';
+export { FOOTBALL_V3_MODEL_VERSION, predictV3 } from './footballV3.js';
 export {
   DEFAULT_MODEL_VERSION,
   getPredictionEngine,

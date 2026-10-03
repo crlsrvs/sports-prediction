@@ -69,6 +69,7 @@ function buildFixture(overrides: Partial<FeatureSnapshot> = {}): {
     squadChangeHome: 0,
     squadChangeAway: 0,
     dataCompleteness: 0.85,
+    ratings: null,
     ...overrides,
   };
 

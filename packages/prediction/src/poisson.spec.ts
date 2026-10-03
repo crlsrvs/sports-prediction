@@ -50,6 +50,22 @@ describe('buildScoreDistribution', () => {
     expect(distribution.mostProbableScore).toEqual({ home: 1, away: 1 });
   });
 
+  it('applies the Dixon-Coles correction to low scores and stays normalized', () => {
+    // Arrange
+    const independent = buildScoreDistribution(1.3, 1.1);
+
+    // Act
+    const corrected = buildScoreDistribution(1.3, 1.1, undefined, -0.1);
+    const total = corrected.matrix.flat().reduce((sum, value) => sum + value, 0);
+
+    // Assert
+    expect(total).toBeCloseTo(1, 9);
+    expect(corrected.matrix[0]?.[0]).toBeGreaterThan(independent.matrix[0]?.[0] ?? 0);
+    expect(corrected.matrix[1]?.[1]).toBeGreaterThan(independent.matrix[1]?.[1] ?? 0);
+    expect(corrected.matrix[1]?.[0]).toBeLessThan(independent.matrix[1]?.[0] ?? 0);
+    expect(corrected.matrix[2]?.[2]).toBeCloseTo(independent.matrix[2]?.[2] ?? 0, 2);
+  });
+
   it('favors the away side when away expected goals dominate', () => {
     // Arrange & Act
     const distribution = buildScoreDistribution(0.6, 2.4);

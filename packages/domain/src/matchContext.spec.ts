@@ -72,6 +72,7 @@ function buildContext(
     squadChangeHome: 0,
     squadChangeAway: 0,
     dataCompleteness: 0.8,
+    ratings: null,
   };
 
   return {

@@ -99,9 +99,31 @@ export interface Prediction {
   readonly outcomeProbabilities: OutcomeProbabilities | null;
 }
 
+/**
+ * Team strength ratings fitted jointly on all results before the cutoff
+ * (Dixon-Coles). Attack is relative to league average (1 = average); defense is
+ * expressed in goals conceded per match against an average attack.
+ */
+export interface MatchRatings {
+  readonly model: 'dixon-coles';
+  readonly homeAttack: number;
+  readonly homeDefense: number;
+  readonly awayAttack: number;
+  readonly awayDefense: number;
+  readonly homeAdvantage: number;
+  /** Low-score dependency parameter; negative values boost 0-0 and 1-1. */
+  readonly rho: number;
+  readonly leagueAverageGoals: number;
+  /** Number of prior matches that informed each team's rating. */
+  readonly homeMatches: number;
+  readonly awayMatches: number;
+}
+
 export interface FeatureSnapshot {
   readonly matchId: MatchId;
   readonly dataCutoffAt: Date;
+  /** Null when ratings were not fitted for this snapshot. */
+  readonly ratings: MatchRatings | null;
   readonly homeForm: readonly string[];
   readonly awayForm: readonly string[];
   readonly homeAttack: number;

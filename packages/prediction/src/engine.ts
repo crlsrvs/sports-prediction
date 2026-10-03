@@ -7,6 +7,7 @@ import {
   type PredictionUnavailableReason,
 } from './footballV1.js';
 import { FOOTBALL_V2_MODEL_VERSION, predictV2 } from './footballV2.js';
+import { FOOTBALL_V3_MODEL_VERSION, predictV3 } from './footballV3.js';
 
 export type PredictFn = (
   matchContext: MatchContext,
@@ -27,9 +28,13 @@ const ENGINES: Readonly<Record<string, PredictionEngine>> = {
     modelVersion: FOOTBALL_V2_MODEL_VERSION,
     predict: predictV2,
   },
+  [FOOTBALL_V3_MODEL_VERSION]: {
+    modelVersion: FOOTBALL_V3_MODEL_VERSION,
+    predict: predictV3,
+  },
 };
 
-export const DEFAULT_MODEL_VERSION = FOOTBALL_V2_MODEL_VERSION;
+export const DEFAULT_MODEL_VERSION = FOOTBALL_V3_MODEL_VERSION;
 
 export function listModelVersions(): readonly string[] {
   return Object.keys(ENGINES);

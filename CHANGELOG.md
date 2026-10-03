@@ -27,7 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin: model selector for backtests, backtest history, regenerate outdated predictions,
   `import-season` with season parameter; 1X2 probabilities shown in admin only.
 
+- `football-v3` (Dixon-Coles): opponent-adjusted, time-decayed attack/defense ratings
+  fitted jointly on all prior results (`fitDixonColes` in `@sports-prediction/features`),
+  explicit home advantage, low-score correlation `rho` and league-average prior for
+  thin histories. `FeatureSnapshot.ratings` carries the fitted ratings per match.
+
 ### Changed
 
-- Default prediction model is now `football-v2` (`football-v1` kept for comparison).
+- Default prediction model is now `football-v3` (`football-v1`/`v2` kept for comparison).
+- Match comparison shows opponent-adjusted attack/defense ratings when available.
 - `predictions` table gains `outcome_probabilities` (migration 003).

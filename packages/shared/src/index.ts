@@ -17,6 +17,7 @@ export function assertNever(value: never): never {
   throw new Error(`Unexpected value: ${String(value)}`);
 }
 
+export { dixonColesTau } from './dixonColesTau.js';
 export {
   API_FOOTBALL_SOURCE_ID,
   DEFAULT_QUEUE_NAME,

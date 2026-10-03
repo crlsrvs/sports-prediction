@@ -71,6 +71,7 @@ function buildFixture(): {
     squadChangeHome: 0,
     squadChangeAway: 0,
     dataCompleteness: 0.85,
+    ratings: null,
   };
 
   return {

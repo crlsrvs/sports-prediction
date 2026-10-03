@@ -2,6 +2,9 @@ import type {
   OutcomeProbabilities,
   PredictedScore,
 } from '@sports-prediction/domain';
+import { dixonColesTau } from '@sports-prediction/shared';
+
+const MIN_CELL_FACTOR = 1e-6;
 
 export const DEFAULT_MAX_GOALS = 8;
 
@@ -26,13 +29,15 @@ export interface ScoreDistribution {
 }
 
 /**
- * Builds the joint score distribution assuming independent Poisson goals.
+ * Builds the joint score distribution assuming independent Poisson goals,
+ * optionally applying the Dixon-Coles low-score correction (`rho`).
  * Truncated at `maxGoals` and renormalized so probabilities sum to 1.
  */
 export function buildScoreDistribution(
   expectedHome: number,
   expectedAway: number,
   maxGoals: number = DEFAULT_MAX_GOALS,
+  rho = 0,
 ): ScoreDistribution {
   const homePmf = Array.from({ length: maxGoals + 1 }, (_, k) =>
     poissonPmf(k, expectedHome),
@@ -46,7 +51,14 @@ export function buildScoreDistribution(
   for (let home = 0; home <= maxGoals; home += 1) {
     const row: number[] = [];
     for (let away = 0; away <= maxGoals; away += 1) {
-      const probability = (homePmf[home] ?? 0) * (awayPmf[away] ?? 0);
+      const factor =
+        rho === 0
+          ? 1
+          : Math.max(
+              MIN_CELL_FACTOR,
+              dixonColesTau(home, away, expectedHome, expectedAway, rho),
+            );
+      const probability = (homePmf[home] ?? 0) * (awayPmf[away] ?? 0) * factor;
       row.push(probability);
       total += probability;
     }

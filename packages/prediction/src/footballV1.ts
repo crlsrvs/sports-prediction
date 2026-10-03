@@ -13,6 +13,7 @@ export const FOOTBALL_MODEL_VERSION = 'football-v1';
 
 export type PredictionUnavailableReason =
   | 'missing_minimum_data'
+  | 'missing_ratings'
   | 'invalid_cutoff';
 
 export interface PredictionOutput {

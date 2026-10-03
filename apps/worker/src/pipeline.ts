@@ -4,7 +4,7 @@ import {
   asPredictionId,
   type MatchContext,
 } from '@sports-prediction/domain';
-import { buildFeatureSnapshot } from '@sports-prediction/features';
+import { buildFeatureSnapshot, fitDixonColes } from '@sports-prediction/features';
 import {
   evaluatePrediction,
   predictionEngine,
@@ -314,6 +314,20 @@ async function generatePredictions(
 ): Promise<{ readonly ok: true; readonly detail: string }> {
   const matches = await store.listMatches();
   const scheduled = matches.filter((match) => match.status === 'scheduled');
+  const competitions = await store.listCompetitions();
+  const history = matches
+    .filter(
+      (item) =>
+        item.status === 'finished' &&
+        item.homeScore !== null &&
+        item.awayScore !== null,
+    )
+    .map((item) => ({
+      match: item,
+      homeScore: item.homeScore as number,
+      awayScore: item.awayScore as number,
+    }));
+
   let generated = 0;
   for (const match of scheduled) {
     const existing = await store.getLatestPrediction(match.id);
@@ -321,24 +335,15 @@ async function generatePredictions(
 
     const homeTeam = await store.getTeam(match.homeTeamId);
     const awayTeam = await store.getTeam(match.awayTeamId);
-    const competition = (await store.listCompetitions()).find(
+    const competition = competitions.find(
       (item) => item.id === match.competitionId,
     );
     if (!homeTeam || !awayTeam || !competition) continue;
 
-    const dataCutoffAt = new Date(match.scheduledAt.getTime() - 5 * 60 * 1000);
-    const history = matches
-      .filter(
-        (item) =>
-          item.status === 'finished' &&
-          item.homeScore !== null &&
-          item.awayScore !== null,
-      )
-      .map((item) => ({
-        match: item,
-        homeScore: item.homeScore as number,
-        awayScore: item.awayScore as number,
-      }));
+    const dataCutoffAt = new Date(
+      Math.min(Date.now(), match.scheduledAt.getTime() - 5 * 60 * 1000),
+    );
+    const ratings = fitDixonColes({ history, cutoffAt: dataCutoffAt });
 
     const featureSnapshot = buildFeatureSnapshot({
       matchId: match.id,
@@ -347,6 +352,7 @@ async function generatePredictions(
       matchScheduledAt: match.scheduledAt,
       dataCutoffAt,
       history,
+      ratings: ratings.matchRatings(match.homeTeamId, match.awayTeamId),
     });
 
     const context: MatchContext = {
