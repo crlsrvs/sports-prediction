@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   independent Poisson score distribution, most-probable score consistent with the
   implied winner, 1X2 probabilities and confidence calibrated from the distribution.
 - Model registry (`getPredictionEngine`, `listModelVersions`, `DEFAULT_MODEL_VERSION`).
+- Team merge: resolving a pending entity now merges the provisional `team-af-*` team
+  into the chosen one (matches re-pointed, aliases combined); `POST /admin/teams/merge`
+  and an Admin form for arbitrary duplicates. Ingest matches by `api-football:<id>`
+  alias before falling back to name matching. Migration `004`.
 - Backtest metrics: multi-class Brier score, log loss, naive baselines, per-competition
   split and confidence calibration buckets; runs persisted in `backtest_runs`.
 - Admin: model selector for backtests, backtest history, regenerate outdated predictions,

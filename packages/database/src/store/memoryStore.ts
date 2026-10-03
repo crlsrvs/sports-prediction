@@ -16,9 +16,21 @@ import type {
   DataSourceRecord,
   EntityAliasRecord,
   RawRecord,
+  ResolveEntityResult,
   ScrapingJobRecord,
+  TeamMergeResult,
   UnresolvedEntity,
 } from './types.js';
+
+/** Target aliases plus the source's canonical name and aliases, deduplicated. */
+export function mergeAliases(target: Team, source: Team): readonly string[] {
+  const pool = new Set<string>([
+    ...target.aliases,
+    source.canonicalName,
+    ...source.aliases,
+  ]);
+  return [...pool];
+}
 
 export class MemoryStore implements AppStore {
   private sports = new Map<string, Sport>();
@@ -162,19 +174,76 @@ export class MemoryStore implements AppStore {
     readonly unresolvedId: string;
     readonly teamId: string;
     readonly alias: string;
-  }): Promise<Team | null> {
+  }): Promise<ResolveEntityResult | null> {
     const team = this.teams.get(input.teamId);
     if (!team) return null;
 
+    const pending = this.unresolved.get(input.unresolvedId);
+    const provisionalId = pending?.provisionalTeamId ?? null;
+    let merged: TeamMergeResult | null = null;
+    if (provisionalId && String(provisionalId) !== input.teamId) {
+      merged = await this.mergeTeams({
+        sourceTeamId: String(provisionalId),
+        targetTeamId: input.teamId,
+      });
+    }
+
+    const current = this.teams.get(input.teamId) ?? team;
     const updated: Team = {
-      ...team,
-      aliases: team.aliases.includes(input.alias)
-        ? team.aliases
-        : [...team.aliases, input.alias],
+      ...current,
+      aliases: current.aliases.includes(input.alias)
+        ? current.aliases
+        : [...current.aliases, input.alias],
     };
     this.teams.set(updated.id, updated);
     this.unresolved.delete(input.unresolvedId);
-    return updated;
+    return {
+      team: updated,
+      mergedTeamId: merged?.mergedTeamId ?? null,
+      movedMatches: merged?.movedMatches ?? 0,
+    };
+  }
+
+  async mergeTeams(input: {
+    readonly sourceTeamId: string;
+    readonly targetTeamId: string;
+  }): Promise<TeamMergeResult | null> {
+    if (input.sourceTeamId === input.targetTeamId) return null;
+    const source = this.teams.get(input.sourceTeamId);
+    const target = this.teams.get(input.targetTeamId);
+    if (!source || !target) return null;
+
+    let movedMatches = 0;
+    for (const [id, match] of this.matches) {
+      const isHome = String(match.homeTeamId) === input.sourceTeamId;
+      const isAway = String(match.awayTeamId) === input.sourceTeamId;
+      if (!isHome && !isAway) continue;
+      this.matches.set(id, {
+        ...match,
+        homeTeamId: isHome ? target.id : match.homeTeamId,
+        awayTeamId: isAway ? target.id : match.awayTeamId,
+      });
+      movedMatches += 1;
+    }
+
+    for (const [id, alias] of this.entityAliases) {
+      if (String(alias.teamId) === input.sourceTeamId) {
+        this.entityAliases.set(id, { ...alias, teamId: target.id });
+      }
+    }
+    for (const [id, pending] of this.unresolved) {
+      if (String(pending.provisionalTeamId) === input.sourceTeamId) {
+        this.unresolved.set(id, { ...pending, provisionalTeamId: target.id });
+      }
+    }
+
+    const updated: Team = {
+      ...target,
+      aliases: mergeAliases(target, source),
+    };
+    this.teams.set(updated.id, updated);
+    this.teams.delete(input.sourceTeamId);
+    return { team: updated, mergedTeamId: source.id, movedMatches };
   }
 
   async saveRawRecord(record: RawRecord): Promise<RawRecord> {

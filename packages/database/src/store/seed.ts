@@ -272,6 +272,7 @@ export function createSeedData(): SeedData {
       incomingName: 'Man City FC',
       sourceId: asDataSourceId('source-api-football'),
       createdAt: now,
+      provisionalTeamId: null,
     },
   ];
 

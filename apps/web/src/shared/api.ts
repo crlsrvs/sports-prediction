@@ -40,6 +40,19 @@ export interface UnresolvedEntityDto {
   readonly incomingName: string;
   readonly sourceId: string;
   readonly createdAt: string;
+  readonly provisionalTeamId: string | null;
+}
+
+export interface TeamMergeResultDto {
+  readonly team: Team;
+  readonly mergedTeamId: string;
+  readonly movedMatches: number;
+}
+
+export interface ResolveEntityResultDto {
+  readonly team: Team;
+  readonly mergedTeamId: string | null;
+  readonly movedMatches: number;
 }
 
 export interface TestSourceResult {
@@ -153,7 +166,12 @@ export const api = {
     teamId: string;
     alias: string;
   }) =>
-    request<Team>('/admin/entities/match', {
+    request<ResolveEntityResultDto>('/admin/entities/match', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  mergeTeams: (body: { sourceTeamId: string; targetTeamId: string }) =>
+    request<TeamMergeResultDto>('/admin/teams/merge', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

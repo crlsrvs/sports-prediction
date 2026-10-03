@@ -10,7 +10,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import type { AppStore, DataSourceRecord } from '@sports-prediction/database';
+import type {
+  AppStore,
+  DataSourceRecord,
+  ResolveEntityResult,
+  TeamMergeResult,
+} from '@sports-prediction/database';
 import {
   asCompetitionId,
   asDataSourceId,
@@ -265,6 +270,10 @@ export class AdminController {
     return this.store.listTeams();
   }
 
+  /**
+   * Resolves a pending entity. When the ingest created a provisional team for
+   * it, that team is merged into `teamId` so its matches follow.
+   */
   @Post('entities/match')
   async matchEntity(
     @Body()
@@ -273,10 +282,30 @@ export class AdminController {
       readonly teamId: string;
       readonly alias: string;
     },
-  ) {
-    const team = await this.store.resolveEntity(body);
-    if (!team) throw new NotFoundException('No se pudo resolver la entidad');
-    return team;
+  ): Promise<ResolveEntityResult> {
+    if (!body?.unresolvedId || !body.teamId || !body.alias) {
+      throw new BadRequestException('unresolvedId, teamId y alias son obligatorios');
+    }
+    const result = await this.store.resolveEntity(body);
+    if (!result) throw new NotFoundException('No se pudo resolver la entidad');
+    return result;
+  }
+
+  /** Merges `sourceTeamId` into `targetTeamId`: matches and aliases move, source is deleted. */
+  @Post('teams/merge')
+  async mergeTeams(
+    @Body()
+    body: { readonly sourceTeamId: string; readonly targetTeamId: string },
+  ): Promise<TeamMergeResult> {
+    if (!body?.sourceTeamId || !body.targetTeamId) {
+      throw new BadRequestException('sourceTeamId y targetTeamId son obligatorios');
+    }
+    if (body.sourceTeamId === body.targetTeamId) {
+      throw new BadRequestException('Origen y destino deben ser equipos distintos');
+    }
+    const result = await this.store.mergeTeams(body);
+    if (!result) throw new NotFoundException('Equipo origen o destino no encontrado');
+    return result;
   }
 
   @Get('predictions')

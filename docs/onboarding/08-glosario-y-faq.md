@@ -125,4 +125,4 @@ El matcher devolvería el primero. No ha ocurrido en 234 equipos, pero es un rie
 Casi siempre es porque cambiaste un tipo del dominio (p. ej. añadiste un campo obligatorio a `FeatureSnapshot`) y hay fixtures de test que lo construyen a mano. Actualízalos; es la señal de que el cambio se propagó bien.
 
 **¿Qué sigue en el roadmap técnico?**
-En orden de valor/costo: fuente con temporada en curso; RPS y métricas por temporada en el backtest; fusión de equipos duplicados desde Admin; scheduler de jobs; datos de alineaciones/lesiones para `injuryImpact`. El PRD (§49–54) detalla las iteraciones de producto.
+En orden de valor/costo: fuente con temporada en curso; RPS y métricas por temporada en el backtest; scheduler de jobs; datos de alineaciones/lesiones para `injuryImpact`. El PRD (§49–54) detalla las iteraciones de producto.

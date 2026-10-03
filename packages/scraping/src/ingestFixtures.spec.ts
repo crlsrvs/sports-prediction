@@ -69,7 +69,39 @@ describe('ingestApiFootballFixtures', () => {
     expect(result.failed).toBe(0);
     expect(result.matches[0]?.homeTeamId).toBe('team-liverpool');
     expect(String(result.matches[0]?.awayTeamId)).toContain('team-af-');
-    expect(result.unresolvedNames).toContain('Manchester City');
+    expect(result.unresolvedTeams).toEqual([
+      { name: 'Manchester City', teamId: result.matches[0]?.awayTeamId },
+    ]);
+  });
+
+  it('prefers the provider id alias over name matching', () => {
+    // Arrange: a canonical team that already absorbed the provider id
+    const merged: Team = {
+      id: asTeamId('team-man-city'),
+      sportId: asSportId('sport-football'),
+      canonicalName: 'Manchester City',
+      aliases: ['api-football:50'],
+    };
+    const fixtures = [
+      fixture({
+        teams: {
+          home: { id: 40, name: 'Liverpool' },
+          away: { id: 50, name: 'Man City (renamed)' },
+        },
+      }),
+    ];
+
+    // Act
+    const result = ingestApiFootballFixtures({
+      fixtures,
+      teams: [...teams, merged],
+      competitions,
+    });
+
+    // Assert
+    expect(result.matches[0]?.awayTeamId).toBe('team-man-city');
+    expect(result.unresolvedTeams).toHaveLength(0);
+    expect(result.teamsToUpsert.map((team) => team.id)).not.toContain('team-man-city');
   });
 
   it('skips fixtures from unsupported leagues', () => {

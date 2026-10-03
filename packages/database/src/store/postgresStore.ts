@@ -20,6 +20,7 @@ import {
 } from '@sports-prediction/domain';
 import type { DbPool } from '../client.js';
 import { createSeedData } from './seed.js';
+import { mergeAliases } from './memoryStore.js';
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import type {
   AppStore,
@@ -28,8 +29,10 @@ import type {
   DataSourceRecord,
   EntityAliasRecord,
   RawRecord,
+  ResolveEntityResult,
   ScrapingJobRecord,
   SourceHealth,
+  TeamMergeResult,
   UnresolvedEntity,
 } from './types.js';
 
@@ -105,6 +108,19 @@ function mapPrediction(row: Record<string, unknown>): Prediction {
   };
 }
 
+function mapUnresolved(row: Record<string, unknown>): UnresolvedEntity {
+  return {
+    id: String(row['id']),
+    incomingName: String(row['incoming_name']),
+    sourceId: asDataSourceId(String(row['source_id'])),
+    createdAt: new Date(String(row['created_at'])),
+    provisionalTeamId:
+      row['provisional_team_id'] == null
+        ? null
+        : asTeamId(String(row['provisional_team_id'])),
+  };
+}
+
 function mapBacktestRun(row: Record<string, unknown>): BacktestRunRecord {
   const details = (row['details'] as BacktestRunRecord['details'] | null) ?? {
     byCompetition: [],
@@ -137,6 +153,7 @@ export class PostgresStore implements AppStore {
       '001_init.sql',
       '002_raw_and_aliases.sql',
       '003_probabilities_and_backtests.sql',
+      '004_unresolved_provisional_team.sql',
     ] as const;
     for (const file of migrationFiles) {
       const sql = readFileSync(join(migrationsDir, file), 'utf8');
@@ -164,17 +181,7 @@ export class PostgresStore implements AppStore {
       await store.savePrediction(prediction);
     }
     for (const unresolved of seed.unresolved) {
-      await pool.query(
-        `INSERT INTO unresolved_entities (id, incoming_name, source_id, created_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (id) DO NOTHING`,
-        [
-          unresolved.id,
-          unresolved.incomingName,
-          unresolved.sourceId,
-          unresolved.createdAt.toISOString(),
-        ],
-      );
+      await store.addUnresolvedEntity(unresolved);
     }
   }
 
@@ -473,26 +480,23 @@ export class PostgresStore implements AppStore {
     const result = await this.pool.query(
       'SELECT * FROM unresolved_entities ORDER BY created_at DESC',
     );
-    return result.rows.map((row) => ({
-      id: String(row['id']),
-      incomingName: String(row['incoming_name']),
-      sourceId: asDataSourceId(String(row['source_id'])),
-      createdAt: new Date(String(row['created_at'])),
-    }));
+    return result.rows.map((row) => mapUnresolved(row));
   }
 
   async addUnresolvedEntity(
     entity: UnresolvedEntity,
   ): Promise<UnresolvedEntity> {
     await this.pool.query(
-      `INSERT INTO unresolved_entities (id, incoming_name, source_id, created_at)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO unresolved_entities (
+         id, incoming_name, source_id, created_at, provisional_team_id
+       ) VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO NOTHING`,
       [
         entity.id,
         entity.incomingName,
         entity.sourceId,
         entity.createdAt.toISOString(),
+        entity.provisionalTeamId,
       ],
     );
     return entity;
@@ -502,20 +506,92 @@ export class PostgresStore implements AppStore {
     readonly unresolvedId: string;
     readonly teamId: string;
     readonly alias: string;
-  }): Promise<Team | null> {
+  }): Promise<ResolveEntityResult | null> {
     const team = await this.getTeam(input.teamId);
     if (!team) return null;
+
+    const pendingResult = await this.pool.query(
+      'SELECT * FROM unresolved_entities WHERE id = $1',
+      [input.unresolvedId],
+    );
+    const pendingRow = pendingResult.rows[0];
+    const pending = pendingRow ? mapUnresolved(pendingRow) : null;
+    const provisionalId = pending?.provisionalTeamId ?? null;
+
+    let merged: TeamMergeResult | null = null;
+    if (provisionalId && String(provisionalId) !== input.teamId) {
+      merged = await this.mergeTeams({
+        sourceTeamId: String(provisionalId),
+        targetTeamId: input.teamId,
+      });
+    }
+
+    const current = (await this.getTeam(input.teamId)) ?? team;
     const updated: Team = {
-      ...team,
-      aliases: team.aliases.includes(input.alias)
-        ? team.aliases
-        : [...team.aliases, input.alias],
+      ...current,
+      aliases: current.aliases.includes(input.alias)
+        ? current.aliases
+        : [...current.aliases, input.alias],
     };
     await this.upsertTeam(updated);
     await this.pool.query('DELETE FROM unresolved_entities WHERE id = $1', [
       input.unresolvedId,
     ]);
-    return updated;
+    return {
+      team: updated,
+      mergedTeamId: merged?.mergedTeamId ?? null,
+      movedMatches: merged?.movedMatches ?? 0,
+    };
+  }
+
+  async mergeTeams(input: {
+    readonly sourceTeamId: string;
+    readonly targetTeamId: string;
+  }): Promise<TeamMergeResult | null> {
+    if (input.sourceTeamId === input.targetTeamId) return null;
+    const [source, target] = await Promise.all([
+      this.getTeam(input.sourceTeamId),
+      this.getTeam(input.targetTeamId),
+    ]);
+    if (!source || !target) return null;
+
+    const updated: Team = { ...target, aliases: mergeAliases(target, source) };
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const home = await client.query(
+        'UPDATE matches SET home_team_id = $1 WHERE home_team_id = $2',
+        [target.id, source.id],
+      );
+      const away = await client.query(
+        'UPDATE matches SET away_team_id = $1 WHERE away_team_id = $2',
+        [target.id, source.id],
+      );
+      await client.query(
+        'UPDATE entity_aliases SET team_id = $1 WHERE team_id = $2',
+        [target.id, source.id],
+      );
+      await client.query(
+        'UPDATE unresolved_entities SET provisional_team_id = $1 WHERE provisional_team_id = $2',
+        [target.id, source.id],
+      );
+      await client.query(
+        'UPDATE teams SET aliases = $1::jsonb WHERE id = $2',
+        [JSON.stringify(updated.aliases), target.id],
+      );
+      await client.query('DELETE FROM teams WHERE id = $1', [source.id]);
+      await client.query('COMMIT');
+      return {
+        team: updated,
+        mergedTeamId: source.id,
+        movedMatches: (home.rowCount ?? 0) + (away.rowCount ?? 0),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async saveRawRecord(record: RawRecord): Promise<RawRecord> {

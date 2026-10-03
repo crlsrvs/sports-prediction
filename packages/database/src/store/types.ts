@@ -39,6 +39,23 @@ export interface UnresolvedEntity {
   readonly incomingName: string;
   readonly sourceId: DataSourceId;
   readonly createdAt: Date;
+  /**
+   * Team the ingest created on the fly for this name. Resolving the entity
+   * against another team merges this provisional team into it.
+   */
+  readonly provisionalTeamId: TeamId | null;
+}
+
+export interface TeamMergeResult {
+  readonly team: Team;
+  readonly mergedTeamId: TeamId;
+  readonly movedMatches: number;
+}
+
+export interface ResolveEntityResult {
+  readonly team: Team;
+  readonly mergedTeamId: TeamId | null;
+  readonly movedMatches: number;
 }
 
 export interface RawRecord {
@@ -124,11 +141,25 @@ export interface AppStore {
   addScrapingJob(job: ScrapingJobRecord): Promise<ScrapingJobRecord>;
   listUnresolvedEntities(): Promise<readonly UnresolvedEntity[]>;
   addUnresolvedEntity(entity: UnresolvedEntity): Promise<UnresolvedEntity>;
+  /**
+   * Attaches `alias` to `teamId` and removes the pending entity. If the entity
+   * points to a provisional team different from `teamId`, that team is merged
+   * (matches re-pointed, aliases combined, provisional row deleted).
+   */
   resolveEntity(input: {
     readonly unresolvedId: string;
     readonly teamId: string;
     readonly alias: string;
-  }): Promise<Team | null>;
+  }): Promise<ResolveEntityResult | null>;
+  /**
+   * Moves every match and alias from `sourceTeamId` to `targetTeamId` and
+   * deletes the source team. Returns null if either team is missing or both
+   * ids are equal.
+   */
+  mergeTeams(input: {
+    readonly sourceTeamId: string;
+    readonly targetTeamId: string;
+  }): Promise<TeamMergeResult | null>;
   saveRawRecord(record: RawRecord): Promise<RawRecord>;
   listRawRecords(limit?: number): Promise<readonly RawRecord[]>;
   deleteRawRecordsOlderThan(cutoff: Date): Promise<number>;

@@ -39,7 +39,7 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `hist-*` / `match-*` (see
 | `data_sources` | fuentes con `kind`, `active`, `health` (`healthy`/`warning`/`broken`/`disabled`), `last_success_at`, `last_failure_at`, `consecutive_failures` |
 | `scraping_jobs` | una fila por ejecución: `source_id`, `started_at`, `finished_at`, `status` (`queued`/`running`/`success`/`partial`/`failed`/`skipped`), `records_found/processed/failed`, `error` |
 | `raw_records` | payload crudo: `source_id`, `url`, `fetched_at`, `status_code`, `content_type`, `payload`, `checksum`, `metadata` (`JSONB`). Retención 30 días |
-| `unresolved_entities` | nombres de equipo que el ingest no pudo mapear: `incoming_name`, `source_id`, `created_at`. Al resolver, la fila se **borra** y el alias se añade a `teams.aliases` |
+| `unresolved_entities` | nombres de equipo que el ingest no pudo mapear: `incoming_name`, `source_id`, `created_at`, `provisional_team_id` (FK a `teams`, `ON DELETE SET NULL`). Al resolver, el equipo provisional se fusiona en el elegido, la fila se **borra** y el alias se añade a `teams.aliases` |
 | `entity_aliases` | `alias` → `team_id`, con `source_id` y `created_at`; `UNIQUE (alias, source_id)`. Preparada para registrar aliases por fuente; hoy el store expone `upsertEntityAlias`/`listEntityAliases` pero el ingest todavía resuelve con `teams.aliases` y nadie escribe en esta tabla |
 | `backtest_runs` | `model_version`, `ran_at`, `samples`, `exact_score_rate`, `winner_rate`, `mae_goals`, `brier_score`, `log_loss`, `details` (`JSONB`: `byCompetition`, `baselines`, `calibration`) |
 
@@ -50,6 +50,7 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `hist-*` / `match-*` (see
 | `001_init.sql` | sports, competitions, teams, matches, predictions, data_sources, scraping_jobs, unresolved_entities |
 | `002_raw_and_aliases.sql` | raw_records, entity_aliases |
 | `003_probabilities_and_backtests.sql` | `predictions.outcome_probabilities`, backtest_runs |
+| `004_unresolved_provisional_team.sql` | `unresolved_entities.provisional_team_id`, índices en `matches(home_team_id)` / `matches(away_team_id)` |
 
 ## `AppStore`
 

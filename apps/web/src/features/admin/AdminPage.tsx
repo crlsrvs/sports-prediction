@@ -21,6 +21,9 @@ export function AdminPage() {
   const [lastJobMessage, setLastJobMessage] = useState<string | null>(null);
   const [lastTestDetail, setLastTestDetail] = useState<string | null>(null);
   const [importSeasonYear, setImportSeasonYear] = useState<string>('2024');
+  const [lastEntityMessage, setLastEntityMessage] = useState<string | null>(null);
+  const [mergeSource, setMergeSource] = useState<string>('');
+  const [mergeTarget, setMergeTarget] = useState<string>('');
 
   const health = useQuery({
     queryKey: ['admin', 'health'],
@@ -57,10 +60,35 @@ export function AdminPage() {
 
   const resolveEntity = useMutation({
     mutationFn: api.resolveEntity,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['admin'] });
+    onSuccess: async (result) => {
+      setLastEntityMessage(
+        result.mergedTeamId
+          ? `Resuelto como ${result.team.canonicalName}; ${result.mergedTeamId} fusionado (${result.movedMatches} partidos movidos). Regenera las predicciones para reflejar el historial unificado.`
+          : `Alias añadido a ${result.team.canonicalName}`,
+      );
+      await invalidateTeamData();
     },
+    onError: (error: Error) => setLastEntityMessage(error.message),
   });
+
+  const mergeTeams = useMutation({
+    mutationFn: api.mergeTeams,
+    onSuccess: async (result) => {
+      setLastEntityMessage(
+        `${result.mergedTeamId} fusionado en ${result.team.canonicalName} (${result.movedMatches} partidos movidos). Regenera las predicciones para reflejar el historial unificado.`,
+      );
+      setMergeSource('');
+      setMergeTarget('');
+      await invalidateTeamData();
+    },
+    onError: (error: Error) => setLastEntityMessage(error.message),
+  });
+
+  async function invalidateTeamData(): Promise<void> {
+    await queryClient.invalidateQueries({ queryKey: ['admin'] });
+    await queryClient.invalidateQueries({ queryKey: ['teams'] });
+    await queryClient.invalidateQueries({ queryKey: ['matches'] });
+  }
 
   const generate = useMutation({
     mutationFn: api.generatePredictions,
@@ -218,6 +246,9 @@ export function AdminPage() {
       </ul>
 
       <h2>Entidades sin resolver</h2>
+      {lastEntityMessage ? (
+        <p className={styles.message}>{lastEntityMessage}</p>
+      ) : null}
       <ul className={styles.list}>
         {(unresolved.data ?? []).length === 0 ? (
           <li className={styles.message}>No hay entidades pendientes</li>
@@ -229,7 +260,12 @@ export function AdminPage() {
               <li key={item.id} className={styles.resolveRow}>
                 <div>
                   <strong>{item.incomingName}</strong>
-                  <span>{item.sourceId}</span>
+                  <span>
+                    {item.sourceId}
+                    {item.provisionalTeamId
+                      ? ` · equipo provisional ${item.provisionalTeamId} (se fusionará)`
+                      : ''}
+                  </span>
                 </div>
                 <div className={styles.resolveControls}>
                   <select
@@ -266,6 +302,61 @@ export function AdminPage() {
           })
         )}
       </ul>
+
+      <h3>Fusionar equipos duplicados</h3>
+      <p className={styles.message}>
+        Mueve todos los partidos y alias del equipo origen al destino y borra el
+        origen. Irreversible.
+      </p>
+      <div className={styles.resolveControls}>
+        <select
+          value={mergeSource}
+          onChange={(event) => setMergeSource(event.target.value)}
+          aria-label="Equipo origen (se borra)"
+        >
+          <option value="">Origen (se borra)…</option>
+          {(teams.data ?? []).map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.canonicalName} · {team.id}
+            </option>
+          ))}
+        </select>
+        <select
+          value={mergeTarget}
+          onChange={(event) => setMergeTarget(event.target.value)}
+          aria-label="Equipo destino (se conserva)"
+        >
+          <option value="">Destino (se conserva)…</option>
+          {(teams.data ?? []).map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.canonicalName} · {team.id}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={
+            !mergeSource ||
+            !mergeTarget ||
+            mergeSource === mergeTarget ||
+            mergeTeams.isPending
+          }
+          onClick={() => {
+            if (
+              window.confirm(
+                `¿Fusionar ${mergeSource} en ${mergeTarget}? El origen se borrará.`,
+              )
+            ) {
+              mergeTeams.mutate({
+                sourceTeamId: mergeSource,
+                targetTeamId: mergeTarget,
+              });
+            }
+          }}
+        >
+          {mergeTeams.isPending ? 'Fusionando…' : 'Fusionar'}
+        </button>
+      </div>
 
       <h2>Jobs recientes</h2>
       <ul className={styles.list}>

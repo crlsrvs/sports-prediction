@@ -53,9 +53,10 @@ Nota: la respuesta incluye `prediction.outcomeProbabilities`. La página públic
 | `POST /admin/sources/:id/test` | | prueba real: seed cuenta partidos; API-Football hace `ping()`. Registra un `scraping_job` y actualiza `health`. Devuelve `{ source, detail }` con `detail` como `api-football-ok:12`, `skipped:missing-api-football-key`, `api-football-failed:<msg>` |
 | `GET /admin/scraping/jobs` | | historial de ejecuciones |
 | `POST /admin/jobs` | `{ name, season? }` | encola en BullMQ; 400 si el nombre no es un `JobName` o la temporada es inválida; 400 si Redis no responde |
-| `GET /admin/entities/unresolved` | | equipos creados por ingest sin alias previo |
-| `GET /admin/teams` | | para el selector de resolución |
-| `POST /admin/entities/match` | `{ unresolvedId, teamId, alias }` | crea alias, marca resuelto |
+| `GET /admin/entities/unresolved` | | equipos creados por ingest sin alias previo (con `provisionalTeamId`) |
+| `GET /admin/teams` | | para los selectores de resolución y fusión |
+| `POST /admin/entities/match` | `{ unresolvedId, teamId, alias }` | fusiona el equipo provisional en `teamId` (si lo hay), crea alias, marca resuelto. Devuelve `{ team, mergedTeamId, movedMatches }` |
+| `POST /admin/teams/merge` | `{ sourceTeamId, targetTeamId }` | mueve partidos y aliases de origen a destino y borra el origen. 400 si son iguales, 404 si alguno no existe |
 | `GET /admin/predictions` | | todas las predicciones (con `outcomeProbabilities`) |
 | `POST /admin/predictions/generate` | | predice todos los `scheduled` sin predicción |
 | `POST /admin/predictions/regenerate` | `{ force?: boolean }` | re-predice partidos *featured* cuya última predicción no sea del modelo actual; con `force`, todos. Las predicciones viejas se conservan |

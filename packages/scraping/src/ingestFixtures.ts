@@ -7,6 +7,7 @@ import {
   type Competition,
   type Match,
   type Team,
+  type TeamId,
 } from '@sports-prediction/domain';
 import { matchTeamByAlias } from '@sports-prediction/normalization';
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
@@ -37,12 +38,22 @@ export function trackedCompetitions(): Competition[] {
   }));
 }
 
+export interface UnresolvedTeam {
+  readonly name: string;
+  /** Provider-scoped team created for this name; merge target for admins. */
+  readonly teamId: TeamId;
+}
+
 export interface IngestFixturesResult {
   readonly teamsToUpsert: Team[];
   readonly matches: Match[];
-  readonly unresolvedNames: string[];
+  readonly unresolvedTeams: UnresolvedTeam[];
   readonly processed: number;
   readonly failed: number;
+}
+
+export function providerAlias(providerTeamId: number): string {
+  return `api-football:${providerTeamId}`;
 }
 
 export function competitionForLeague(
@@ -54,9 +65,7 @@ export function competitionForLeague(
   return competitions.find((item) => item.id === preferredId) ?? null;
 }
 
-export function teamIdFromProvider(
-  providerTeamId: number,
-): ReturnType<typeof asTeamId> {
+export function teamIdFromProvider(providerTeamId: number): TeamId {
   return asTeamId(`team-af-${providerTeamId}`);
 }
 
@@ -80,13 +89,19 @@ export function ingestApiFootballFixtures(input: {
   const teamsById = new Map(input.teams.map((team) => [String(team.id), team]));
   const dirtyTeamIds = new Set<string>();
   const matches: Match[] = [];
-  const unresolvedNames: string[] = [];
+  const unresolvedTeams = new Map<string, UnresolvedTeam>();
   let failed = 0;
 
   const resolveTeam = (provider: {
     readonly id: number;
     readonly name: string;
   }): Team | null => {
+    const alias = providerAlias(provider.id);
+    const existingByProviderId = [...teamsById.values()].find((team) =>
+      team.aliases.includes(alias),
+    );
+    if (existingByProviderId) return existingByProviderId;
+
     const existingByAlias = matchTeamByAlias(provider.name, [
       ...teamsById.values(),
     ]);
@@ -113,11 +128,11 @@ export function ingestApiFootballFixtures(input: {
       id,
       sportId: SPORT_ID,
       canonicalName: provider.name,
-      aliases: [provider.name, `api-football:${provider.id}`],
+      aliases: [provider.name, alias],
     };
     teamsById.set(String(created.id), created);
     dirtyTeamIds.add(String(created.id));
-    unresolvedNames.push(provider.name);
+    unresolvedTeams.set(provider.name, { name: provider.name, teamId: id });
     return created;
   };
 
@@ -166,7 +181,7 @@ export function ingestApiFootballFixtures(input: {
       .map((id) => teamsById.get(id))
       .filter((team): team is Team => team !== undefined),
     matches,
-    unresolvedNames: [...new Set(unresolvedNames)],
+    unresolvedTeams: [...unresolvedTeams.values()],
     processed: matches.length,
     failed,
   };

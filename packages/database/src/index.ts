@@ -20,8 +20,10 @@ export type {
   DataSourceRecord,
   EntityAliasRecord,
   RawRecord,
+  ResolveEntityResult,
   ScrapingJobRecord,
   SourceHealth,
+  TeamMergeResult,
   UnresolvedEntity,
 } from './store/types.js';
 

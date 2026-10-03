@@ -149,12 +149,13 @@ async function scrapeSource(
     for (const match of ingested.matches) {
       await store.upsertMatch(match);
     }
-    for (const name of ingested.unresolvedNames) {
+    for (const pending of ingested.unresolvedTeams) {
       await store.addUnresolvedEntity({
         id: `unresolved-${crypto.randomUUID()}`,
-        incomingName: name,
+        incomingName: pending.name,
         sourceId: asDataSourceId(API_FOOTBALL_SOURCE_ID),
         createdAt: startedAt,
+        provisionalTeamId: pending.teamId,
       });
     }
 

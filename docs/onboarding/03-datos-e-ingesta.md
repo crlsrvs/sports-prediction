@@ -67,18 +67,24 @@ Por cada fixture:
 
 1. Busca la competición por `league.id` en `LEAGUE_TO_COMPETITION`. Si no está mapeada → `failed`.
 2. Resuelve cada equipo con `resolveTeam`:
-   - Intenta `matchTeamByAlias(nombre, equipos)` (exacto o texto normalizado). Si acierta, añade el nombre a los `aliases` del equipo canónico.
-   - Si no, crea un equipo nuevo con id `team-af-<providerId>`, aliases `[nombre, 'api-football:<id>']`, y lo apunta en `unresolvedNames` para que un admin lo revise (podría ser un duplicado con otro nombre).
+   - Primero busca un equipo que ya tenga el alias `api-football:<id>` (identidad estable aunque el proveedor cambie el nombre).
+   - Si no, intenta `matchTeamByAlias(nombre, equipos)` (exacto o texto normalizado). Si acierta, añade el nombre a los `aliases` del equipo canónico.
+   - Si no, crea un equipo nuevo con id `team-af-<providerId>`, aliases `[nombre, 'api-football:<id>']`, y lo apunta en `unresolvedTeams` (`{ name, teamId }`) para que un admin lo revise (podría ser un duplicado con otro nombre).
 3. Mapea el estado (`FT`/`AET`/`PEN` → `finished`, `NS`/`TBD` → `scheduled`, `PST`/`SUSP` → `postponed`, `CANC`/`ABD`/`AWD`/`WO` → `cancelled`, cualquier otro → `live`) y los goles.
 4. Crea el `Match` con id `match-af-<fixtureId>` y `sourceId = source-api-football`.
 
-Devuelve `{ teamsToUpsert, matches, unresolvedNames, processed, failed }`. El worker persiste todo con `upsert`, así que re-importar una temporada es idempotente y actualiza marcadores.
+Devuelve `{ teamsToUpsert, matches, unresolvedTeams, processed, failed }`. El worker persiste todo con `upsert`, así que re-importar una temporada es idempotente y actualiza marcadores.
 
 ### Entidades sin resolver y aliases
 
-Cuando el ingest crea un equipo nuevo, aparece en Admin → "Entidades sin resolver". Si realmente es un equipo que ya existía con otro nombre (p. ej. `Man City FC` vs `Manchester City`), el admin elige el canónico y pulsa **Resolver**: el alias se añade a `teams.aliases` del canónico y la entidad pendiente se elimina. La próxima importación mapeará ese nombre al equipo correcto.
+Cuando el ingest crea un equipo nuevo, aparece en Admin → "Entidades sin resolver". Si realmente es un equipo que ya existía con otro nombre (p. ej. `Man City FC` vs `Manchester City`), el admin elige el canónico y pulsa **Resolver**. La entidad pendiente guarda `provisional_team_id` (el `team-af-<id>` que creó el ingest), así que resolver hace dos cosas:
 
-Ojo: resolver **no** fusiona los partidos ya importados bajo el id duplicado (`team-af-<id>`). Si eso ocurre con un equipo relevante, hay que reasignar `home_team_id`/`away_team_id` manualmente y borrar el duplicado. Es una mejora pendiente.
+1. **Fusiona** el equipo provisional en el canónico (`store.mergeTeams`): re-apunta `home_team_id`/`away_team_id` de todos sus partidos, mueve `entity_aliases`, combina `aliases` (incluido `api-football:<id>`) y borra el provisional. En Postgres es una transacción.
+2. Añade el alias al canónico y borra la fila pendiente. La próxima importación mapeará ese nombre (y ese id de proveedor) al equipo correcto.
+
+La respuesta incluye `mergedTeamId` y `movedMatches`. Las predicciones ya generadas para esos partidos siguen siendo válidas como registro, pero se calcularon con el historial partido en dos; usa **Regenerar todas (forzar)** en Admin para recalcularlas con el historial unificado.
+
+Para duplicados que no pasaron por la cola (p. ej. dos `team-af-*` del mismo club), Admin tiene **Fusionar equipos duplicados** (`POST /admin/teams/merge`). Es irreversible: elige bien cuál es origen (se borra) y cuál destino (se conserva).
 
 Hoy el matcher es deliberadamente conservador (exacto/normalizado). No hace fuzzy matching para evitar falsos positivos; preferimos un alias manual a un equipo mal fusionado.
 
