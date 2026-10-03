@@ -125,4 +125,4 @@ El matcher devolvería el primero. No ha ocurrido en 234 equipos, pero es un rie
 Casi siempre es porque cambiaste un tipo del dominio (p. ej. añadiste un campo obligatorio a `FeatureSnapshot`) y hay fixtures de test que lo construyen a mano. Actualízalos; es la señal de que el cambio se propagó bien.
 
 **¿Qué sigue en el roadmap técnico?**
-En orden de valor/costo: scheduler de jobs (`scrape-source` diario, `generate-predictions` tras cada sync); RPS y métricas por temporada en el backtest; CI; datos de alineaciones/lesiones para `injuryImpact`. El PRD (§49–54) detalla las iteraciones de producto.
+En orden de valor/costo: CI (typecheck + lint + test en cada PR); despliegue (Vercel/Neon/Upstash + un host para API y worker); RPS y métricas por temporada en el backtest; datos de alineaciones/lesiones para `injuryImpact`. El scheduler y la evaluación en vivo ya existen (ver [03](./03-datos-e-ingesta.md#scheduler) y [05](./05-api-y-frontend.md#liveevaluationpanel-y-backtestpanel)). El PRD (§49–54) detalla las iteraciones de producto.

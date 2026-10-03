@@ -1,8 +1,10 @@
 import type {
   Competition,
+  CompetitionId,
   DataSourceId,
   Match,
   MatchId,
+  MatchOutcome,
   Prediction,
   Sport,
   Team,
@@ -121,6 +123,42 @@ export interface BacktestRunRecord {
   };
 }
 
+/**
+ * Outcome of comparing one stored prediction with the final result. Persisted
+ * once per prediction so the live season can be tracked without re-running
+ * the model.
+ */
+export interface PredictionEvaluationRecord {
+  readonly predictionId: string;
+  readonly matchId: MatchId;
+  readonly modelVersion: string;
+  readonly competitionId: CompetitionId;
+  readonly kickoffAt: Date;
+  readonly generatedAt: Date;
+  /** False when the prediction was computed after the result was known (e.g. backfill). */
+  readonly generatedBeforeKickoff: boolean;
+  readonly evaluatedAt: Date;
+  readonly confidence: number;
+  readonly predictedHome: number;
+  readonly predictedAway: number;
+  readonly actualHome: number;
+  readonly actualAway: number;
+  readonly predictedOutcome: MatchOutcome;
+  readonly actualOutcome: MatchOutcome;
+  readonly exactScore: boolean;
+  readonly winnerHit: boolean;
+  readonly brierScore: number | null;
+  readonly logLoss: number | null;
+}
+
+export interface PredictionEvaluationFilter {
+  readonly modelVersion?: string;
+  /** Only evaluations whose match kicked off at or after this instant. */
+  readonly since?: Date;
+  /** Only predictions generated before kickoff (default when omitted: all). */
+  readonly liveOnly?: boolean;
+}
+
 export interface AppStore {
   listSports(): Promise<readonly Sport[]>;
   upsertSport(sport: Sport): Promise<Sport>;
@@ -168,4 +206,10 @@ export interface AppStore {
   getDataMode(): Promise<DataMode>;
   saveBacktestRun(run: BacktestRunRecord): Promise<BacktestRunRecord>;
   listBacktestRuns(limit?: number): Promise<readonly BacktestRunRecord[]>;
+  savePredictionEvaluation(
+    record: PredictionEvaluationRecord,
+  ): Promise<PredictionEvaluationRecord>;
+  listPredictionEvaluations(
+    filter?: PredictionEvaluationFilter,
+  ): Promise<readonly PredictionEvaluationRecord[]>;
 }

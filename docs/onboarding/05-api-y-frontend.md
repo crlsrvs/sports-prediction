@@ -55,7 +55,8 @@ Nota: la respuesta incluye `prediction.outcomeProbabilities`. La página públic
 | `PATCH /admin/sources/:id` | `{ active?, health? }` | |
 | `POST /admin/sources/:id/test` | | prueba real: seed cuenta partidos; API-Football y football-data.org hacen `ping()` (`PINGABLE_PROVIDERS`). Registra un `scraping_job` y actualiza `health`. Devuelve `{ source, detail }` con `detail` como `api-football-ok:12`, `skipped:missing-api-football-key`, `api-football-failed:<msg>` |
 | `GET /admin/scraping/jobs` | | historial de ejecuciones |
-| `POST /admin/jobs` | `{ name, season? }` | encola en BullMQ; 400 si el nombre no es un `JobName` o la temporada es inválida; 400 si Redis no responde |
+| `POST /admin/jobs` | `{ name, season?, chain? }` | encola en BullMQ; `chain: true` con `scrape-source` encadena generar + evaluar. 400 si el nombre no es un `JobName` o la temporada es inválida; 400 si Redis no responde |
+| `GET /admin/schedules` | | schedules declarados en `JOB_SCHEDULES` con `cron`, `nextRunAt` y `registered` (si el worker ya los registró en Redis). 400 si Redis no responde |
 | `GET /admin/entities/unresolved` | | equipos creados por ingest sin alias previo (con `provisionalTeamId`) |
 | `GET /admin/teams` | | para los selectores de resolución y fusión |
 | `POST /admin/entities/match` | `{ unresolvedId, teamId, alias }` | fusiona el equipo provisional en `teamId` (si lo hay), crea alias, marca resuelto. Devuelve `{ team, mergedTeamId, movedMatches }` |
@@ -66,6 +67,7 @@ Nota: la respuesta incluye `prediction.outcomeProbabilities`. La página públic
 | `GET /admin/models` | | `{ default, available }` |
 | `GET /admin/backtests` | `?limit=20` | corridas persistidas, más reciente primero (máx. 100). Solo lectura |
 | `POST /admin/backtests` | `{ model? }` | **ejecuta** un backtest walk-forward (modelo por defecto si no se indica) y lo persiste; devuelve `BacktestRunRecord`. 400 si el modelo no existe |
+| `GET /admin/evaluations/summary` | `?model=&since=&liveOnly=` | métricas de la **temporada en vivo** a partir de `prediction_evaluations` (sin re-ejecutar el modelo). Por defecto: modelo actual, desde el 1 de julio de la temporada en curso, solo predicciones generadas antes del partido (`liveOnly=false` incluye las rellenadas a posteriori; `backfilled` dice cuántas se excluyeron). Mismas tablas que el backtest (`summarizeBacktest`), solo competiciones visibles |
 | `POST /admin/sports` | `{ name, slug }` | |
 | `POST /admin/competitions` | `{ name, sportId, country? }` | |
 
@@ -79,6 +81,8 @@ curl -s -X POST localhost:3000/admin/jobs -H 'Content-Type: application/json' \
 curl -s -X POST localhost:3000/admin/backtests -H 'Content-Type: application/json' \
      -d '{"model":"football-v2"}' | jq '{samples, winnerRate, brierScore}'
 curl -s "localhost:3000/admin/backtests?limit=5" | jq '.[] | {modelVersion, brierScore}'
+curl -s "localhost:3000/admin/evaluations/summary" | jq '{samples, winnerRate, brierScore, backfilled}'
+curl -s localhost:3000/admin/schedules | jq '.[] | {id, cron, nextRunAt}'
 curl -s -X POST localhost:3000/admin/predictions/regenerate -H 'Content-Type: application/json' -d '{"force":true}'
 ```
 
@@ -130,11 +134,16 @@ Banner según `dataMode`. Filtros por competición y estado. Una card por partid
 Marcador estimado, goles esperados (gráfico Recharts), confianza, lista de factores con dirección e impacto, comparación de equipos (ataque/defensa ajustados, forma, localía) y, si el partido terminó, resultado real y evaluación. Si no hay predicción, muestra `unavailableReason`. **No** muestra 1X2.
 
 **Admin (`/admin`)**
-Contadores, acciones (generar, regenerar, regenerar forzado), botones de jobs (con input de temporada para `import-season`), `BacktestPanel`, fuentes con "Probar" y último `detail`, entidades sin resolver con selector de equipo canónico, jobs recientes con estado y error, últimas predicciones con `1X2 a/b/c` (solo aquí se ven las probabilidades).
+Contadores, acciones (generar, regenerar, regenerar forzado), botones de jobs (con input de temporada para `import-season`), sección "Programación" (schedules y próxima ejecución), `LiveEvaluationPanel`, `BacktestPanel`, fuentes con "Probar" y último `detail`, entidades sin resolver con selector de equipo canónico y formulario de fusión, jobs recientes con estado y error, últimas predicciones con `1X2 a/b/c` (solo aquí se ven las probabilidades).
 
-### `BacktestPanel`
+### `LiveEvaluationPanel` y `BacktestPanel`
 
-Carga `/admin/models` y `GET /admin/backtests`. Permite elegir modelo y ejecutar (`POST /admin/backtests`). Muestra: tabla "última corrida por modelo" (para comparar v1/v2/v3 de un vistazo), líneas base, por competición y calibración de la corrida seleccionada. Todo lo que ves ahí sale de `summarizeBacktest`.
+Son dos respuestas a preguntas distintas y conviene no mezclarlas:
+
+- **Temporada en vivo** (`LiveEvaluationPanel`, `GET /admin/evaluations/summary`): ¿cómo le fue a lo que de verdad publicamos? Solo cuenta predicciones guardadas antes del partido y evaluadas al conocer el resultado. Es la métrica honesta de cara al producto; empieza vacía cada temporada y crece jornada a jornada. El checkbox "incluir predicciones generadas tras el partido" añade las rellenadas a posteriori (sirven para depurar, no para presumir).
+- **Backtest** (`BacktestPanel`, `POST /admin/backtests`): ¿qué tan bueno es el modelo sobre el historial? Re-ejecuta el modelo partido a partido con corte temporal. Es la herramienta para comparar versiones antes de cambiar el modelo por defecto.
+
+Ambos comparten `MetricsTables` (líneas base, por competición, calibración) y la misma función de resumen (`summarizeBacktest`), así que los números son comparables entre sí.
 
 ### Añadir una pantalla
 

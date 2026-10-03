@@ -15,6 +15,8 @@ import type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  PredictionEvaluationFilter,
+  PredictionEvaluationRecord,
   RawRecord,
   ResolveEntityResult,
   ScrapingJobRecord,
@@ -44,6 +46,7 @@ export class MemoryStore implements AppStore {
   private rawRecords: RawRecord[] = [];
   private entityAliases = new Map<string, EntityAliasRecord>();
   private backtestRuns: BacktestRunRecord[] = [];
+  private evaluations = new Map<string, PredictionEvaluationRecord>();
 
   static seeded(): MemoryStore {
     const store = new MemoryStore();
@@ -294,4 +297,29 @@ export class MemoryStore implements AppStore {
       .sort((a, b) => b.ranAt.getTime() - a.ranAt.getTime())
       .slice(0, limit);
   }
+
+  async savePredictionEvaluation(
+    record: PredictionEvaluationRecord,
+  ): Promise<PredictionEvaluationRecord> {
+    this.evaluations.set(record.predictionId, record);
+    return record;
+  }
+
+  async listPredictionEvaluations(
+    filter: PredictionEvaluationFilter = {},
+  ): Promise<readonly PredictionEvaluationRecord[]> {
+    return [...this.evaluations.values()]
+      .filter((item) => matchesEvaluationFilter(item, filter))
+      .sort((a, b) => b.kickoffAt.getTime() - a.kickoffAt.getTime());
+  }
+}
+
+export function matchesEvaluationFilter(
+  item: PredictionEvaluationRecord,
+  filter: PredictionEvaluationFilter,
+): boolean {
+  if (filter.modelVersion && item.modelVersion !== filter.modelVersion) return false;
+  if (filter.since && item.kickoffAt.getTime() < filter.since.getTime()) return false;
+  if (filter.liveOnly && !item.generatedBeforeKickoff) return false;
+  return true;
 }

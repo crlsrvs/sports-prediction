@@ -2,14 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type BacktestRunDto } from '../../shared/api.js';
 import styles from './BacktestPanel.module.css';
-
-function pct(value: number | null | undefined): string {
-  return value == null ? '—' : `${(value * 100).toFixed(1)}%`;
-}
-
-function num(value: number | null | undefined, digits = 3): string {
-  return value == null ? '—' : value.toFixed(digits);
-}
+import { MetricsTables, num, pct } from './MetricsTables.js';
 
 export function BacktestPanel() {
   const queryClient = useQueryClient();
@@ -107,89 +100,7 @@ export function BacktestPanel() {
       ) : null}
 
       {current ? (
-        <div className={styles.details}>
-          {current.details.baselines.length > 0 ? (
-            <table className={styles.table}>
-              <caption>Líneas base ({current.modelVersion})</caption>
-              <thead>
-                <tr>
-                  <th>Referencia</th>
-                  <th>Ganador</th>
-                  <th>Brier</th>
-                  <th>Log loss</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className={styles.active}>
-                  <td>{current.modelVersion}</td>
-                  <td>{pct(current.winnerRate)}</td>
-                  <td>{num(current.brierScore)}</td>
-                  <td>{num(current.logLoss)}</td>
-                </tr>
-                {current.details.baselines.map((baseline) => (
-                  <tr key={baseline.label}>
-                    <td>{baseline.label}</td>
-                    <td>{pct(baseline.winnerRate)}</td>
-                    <td>{num(baseline.brierScore)}</td>
-                    <td>{num(baseline.logLoss)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-
-          {current.details.byCompetition.length > 0 ? (
-            <table className={styles.table}>
-              <caption>Por competición</caption>
-              <thead>
-                <tr>
-                  <th>Competición</th>
-                  <th>Partidos</th>
-                  <th>Ganador</th>
-                  <th>Exacto</th>
-                  <th>Brier</th>
-                </tr>
-              </thead>
-              <tbody>
-                {current.details.byCompetition.map((item) => (
-                  <tr key={item.competitionId}>
-                    <td>{item.competitionName}</td>
-                    <td>{item.samples}</td>
-                    <td>{pct(item.winnerRate)}</td>
-                    <td>{pct(item.exactScoreRate)}</td>
-                    <td>{num(item.brierScore)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-
-          {current.details.calibration.length > 0 ? (
-            <table className={styles.table}>
-              <caption>Calibración de la confianza</caption>
-              <thead>
-                <tr>
-                  <th>Confianza</th>
-                  <th>Partidos</th>
-                  <th>Confianza media</th>
-                  <th>Acierto real</th>
-                </tr>
-              </thead>
-              <tbody>
-                {current.details.calibration.map((bucket) => (
-                  <tr key={bucket.rangeStart}>
-                    <td>
-                      {pct(bucket.rangeStart)} – {pct(bucket.rangeEnd)}
-                    </td>
-                    <td>{bucket.samples}</td>
-                    <td>{pct(bucket.averageConfidence)}</td>
-                    <td>{pct(bucket.observedAccuracy)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-        </div>
+        <MetricsTables summary={current} />
       ) : (
         <p className={styles.hint}>Aún no hay backtests guardados.</p>
       )}

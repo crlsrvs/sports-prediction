@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../shared/api.js';
 import styles from './AdminPage.module.css';
 import { BacktestPanel } from './BacktestPanel.js';
+import { LiveEvaluationPanel } from './LiveEvaluationPanel.js';
 
 const ENQUEUEABLE_JOBS = [
   'discover-todays-matches',
@@ -44,6 +45,11 @@ export function AdminPage() {
   const predictions = useQuery({
     queryKey: ['admin', 'predictions'],
     queryFn: api.getPredictions,
+  });
+  const schedules = useQuery({
+    queryKey: ['admin', 'schedules'],
+    queryFn: api.getSchedules,
+    refetchInterval: 60_000,
   });
   const teams = useQuery({
     queryKey: ['teams'],
@@ -218,6 +224,36 @@ export function AdminPage() {
         )}
       </div>
       {lastJobMessage ? <p className={styles.message}>{lastJobMessage}</p> : null}
+
+      <h2>Programación</h2>
+      {schedules.error ? (
+        <p className={styles.message}>{schedules.error.message}</p>
+      ) : (
+        <ul className={styles.list}>
+          {(schedules.data ?? []).map((schedule) => (
+            <li key={schedule.id}>
+              <div>
+                <strong>
+                  {schedule.name} · <code>{schedule.cron}</code> UTC
+                </strong>
+                <span>
+                  {schedule.description}
+                  {' · '}
+                  {schedule.registered
+                    ? `próxima: ${
+                        schedule.nextRunAt
+                          ? new Date(schedule.nextRunAt).toLocaleString('es-ES')
+                          : '—'
+                      }`
+                    : 'no registrada (¿worker arrancado?)'}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <LiveEvaluationPanel />
 
       <BacktestPanel />
 

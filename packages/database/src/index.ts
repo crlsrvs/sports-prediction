@@ -19,6 +19,8 @@ export type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  PredictionEvaluationFilter,
+  PredictionEvaluationRecord,
   RawRecord,
   ResolveEntityResult,
   ScrapingJobRecord,

@@ -137,7 +137,7 @@ Nombres en `packages/shared/src/jobs.ts`; implementación en `apps/worker/src/pi
 | `normalize-source-data` | — | `skipped`: la normalización ocurre inline durante el ingest |
 | `calculate-features` | — | `skipped`: las features se calculan bajo demanda |
 | `generate-predictions` | Para cada partido `scheduled` sin predicción **que empiece en los próximos `PREDICTION_HORIZON_DAYS` (10) días**: construye snapshot, predice con el modelo por defecto y guarda. Los ratings se ajustan una sola vez (todos comparten cutoff = ahora) | funcional |
-| `evaluate-predictions` | Evalúa la última predicción de cada partido terminado | funcional (no persiste aún; el backtest cubre la necesidad) |
+| `evaluate-predictions` | Para cada partido terminado con predicción: calcula acierto 1X2, marcador exacto, Brier y log loss y lo **persiste en `prediction_evaluations`** (una fila por predicción; las ya evaluadas se saltan). Guarda `generated_before_kickoff` para separar lo que se predijo de verdad antes del partido de lo rellenado a posteriori. En modo live ignora partidos seed | funcional |
 | `cleanup-raw-data` | Borra RAW > 30 días | funcional |
 | `source-health-check` | Cuenta fuentes | informativo |
 
@@ -152,7 +152,20 @@ POST /admin/jobs
 
 `AdminController.enqueue` valida el nombre con `isJobName`, valida `season` si viene, y llama a `enqueueJob(name, data)` (`apps/api/src/jobs/jobQueue.ts`), que usa un `Queue` de BullMQ. El worker recibe `job.name` y `job.data` y llama a `runPipelineJob`.
 
-No hay scheduler automático todavía (cron). Los jobs se disparan desde Admin o por HTTP.
+`scrape-source` admite `{ "chain": true }`: tras sincronizar ejecuta `generate-predictions` y `evaluate-predictions` en el mismo job, de modo que una sola corrida deja el dashboard al día. Es lo que usa el scheduler.
+
+### Scheduler
+
+Las ejecuciones periódicas se declaran en `packages/shared/src/schedules.ts` (`JOB_SCHEDULES`) y las registra el worker al arrancar (`apps/worker/src/scheduler.ts`, `reconcileSchedules`) como *job schedulers* de BullMQ, siempre en UTC:
+
+| id | cron (UTC) | job |
+|---|---|---|
+| `sync-and-predict` | `15 */6 * * *` | `scrape-source` con `chain: true` |
+| `cleanup-raw-weekly` | `0 5 * * 1` | `cleanup-raw-data` |
+
+La reconciliación es idempotente: borra en Redis los schedulers que ya no estén declarados y crea/actualiza los demás. Para cambiar la frecuencia edita el cron y reinicia el worker; no toques Redis a mano. `JOB_SCHEDULER_ENABLED=false` desactiva el registro (útil si corres varios workers o en local no quieres gastar cuota de API). `GET /admin/schedules` muestra cada schedule con su próxima ejecución; también aparece en Admin → Programación.
+
+Dos avisos prácticos: football-data.org admite 10 peticiones/minuto y una sincronización completa consume 6, así que no encadenes dos `scrape-source` en el mismo minuto; y como el scheduler ya cubre la sincronización, un `scrape-source` manual solo tiene sentido para forzar una actualización puntual.
 
 ## Datos actuales en la base local (referencia)
 

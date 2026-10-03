@@ -34,6 +34,11 @@ export function assertNever(value: never): never {
 
 export { dixonColesTau } from './dixonColesTau.js';
 export {
+  isJobSchedulerEnabled,
+  JOB_SCHEDULES,
+  type JobSchedule,
+} from './schedules.js';
+export {
   API_FOOTBALL_SOURCE_ID,
   FOOTBALL_DATA_SOURCE_ID,
   isLiveSourceId,

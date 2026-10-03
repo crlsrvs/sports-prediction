@@ -101,6 +101,33 @@ export interface BacktestRunDto {
   };
 }
 
+export interface LiveEvaluationDto {
+  readonly modelVersion: string;
+  readonly since: string;
+  readonly liveOnly: boolean;
+  readonly backfilled: number;
+  readonly firstKickoffAt: string | null;
+  readonly lastKickoffAt: string | null;
+  readonly samples: number;
+  readonly exactScoreRate: number;
+  readonly winnerRate: number;
+  readonly maeGoals: number;
+  readonly brierScore: number | null;
+  readonly logLoss: number | null;
+  readonly byCompetition: readonly BacktestCompetitionDto[];
+  readonly baselines: readonly BacktestBaselineDto[];
+  readonly calibration: readonly BacktestCalibrationDto[];
+}
+
+export interface ScheduleDto {
+  readonly id: string;
+  readonly name: string;
+  readonly cron: string;
+  readonly description: string;
+  readonly nextRunAt: string | null;
+  readonly registered: boolean;
+}
+
 export interface ModelsDto {
   readonly default: string;
   readonly available: readonly string[];
@@ -154,12 +181,13 @@ export const api = {
   getSources: () => request<DataSourceDto[]>('/admin/sources'),
   testSource: (id: string) =>
     request<TestSourceResult>(`/admin/sources/${id}/test`, { method: 'POST' }),
-  enqueueJob: (input: { name: string; season?: number }) =>
+  enqueueJob: (input: { name: string; season?: number; chain?: boolean }) =>
     request<{ jobId: string; name: string }>('/admin/jobs', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
   getJobs: () => request<ScrapingJobDto[]>('/admin/scraping/jobs'),
+  getSchedules: () => request<ScheduleDto[]>('/admin/schedules'),
   getUnresolved: () => request<UnresolvedEntityDto[]>('/admin/entities/unresolved'),
   resolveEntity: (body: {
     unresolvedId: string;
@@ -183,6 +211,16 @@ export const api = {
     }),
   getBacktestHistory: () => request<BacktestRunDto[]>('/admin/backtests'),
   getModels: () => request<ModelsDto>('/admin/models'),
+  getLiveEvaluation: (options: { model?: string; since?: string; liveOnly?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options.model) params.set('model', options.model);
+    if (options.since) params.set('since', options.since);
+    if (options.liveOnly === false) params.set('liveOnly', 'false');
+    const query = params.toString();
+    return request<LiveEvaluationDto>(
+      `/admin/evaluations/summary${query ? `?${query}` : ''}`,
+    );
+  },
   generatePredictions: () =>
     request<{ generated: number }>('/admin/predictions/generate', {
       method: 'POST',

@@ -145,6 +145,8 @@ NestJS con módulos por feature: `health`, `sports`, `matches`, `analysis`, `adm
 
 Un `Worker` de BullMQ sobre la cola `sports-prediction` que delega en `runPipelineJob(name, data)` (`pipeline.ts`). Cada `case` del `switch` es un job. Si añades un job nuevo y olvidas el `case`, el `never` exhaustivo rompe el typecheck a propósito.
 
+Al arrancar, además, registra las ejecuciones periódicas (`scheduler.ts` → `reconcileSchedules`) declaradas en `packages/shared/src/schedules.ts`. El worker es el único que escribe schedules en Redis; la API solo los lee (`GET /admin/schedules`). Ver [03-datos-e-ingesta](./03-datos-e-ingesta.md#scheduler).
+
 ### `apps/web`
 
 Organizado por *features* (`today`, `analysis`, `admin`), cada una con componente, estilos `.module.css` y tests al lado. `shared/api.ts` es el único punto de acceso HTTP (tipado), `shared/format.ts` formateadores. Estado de servidor con TanStack Query; no hay estado global adicional.

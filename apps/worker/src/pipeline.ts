@@ -49,8 +49,18 @@ export async function runPipelineJob(
       const todayCount = matches.filter((match) => isSameUtcDay(match.scheduledAt, new Date())).length;
       return { ok: true, detail: `discovered:${todayCount}` };
     }
-    case JOB_NAMES.SCRAPE_SOURCE:
-      return scrapeSources(store);
+    case JOB_NAMES.SCRAPE_SOURCE: {
+      const scraped = await scrapeSources(store);
+      if (data['chain'] !== true) return scraped;
+      // Scheduled runs chain the follow-ups so fresh results immediately feed
+      // new predictions and evaluations without cron offsets.
+      const generated = await generatePredictions(store);
+      const evaluated = await evaluatePredictions(store);
+      return {
+        ok: true,
+        detail: `${scraped.detail} ; ${generated.detail} ; ${evaluated.detail}`,
+      };
+    }
     case JOB_NAMES.IMPORT_SEASON:
       return importSeason(store, parseSeason(data['season']));
     case JOB_NAMES.NORMALIZE_SOURCE_DATA:
@@ -557,26 +567,66 @@ async function evaluatePredictions(
   store: AppStore,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
   const matches = await store.listMatches();
+  // Demo results are fabricated; once real data exists they must not enter
+  // the live scorecard (same rule as buildFinishedHistory).
+  const liveMode = (await store.getDataMode()) === 'live';
   const finished = matches.filter(
     (match) =>
       match.status === 'finished' &&
       match.homeScore !== null &&
-      match.awayScore !== null,
+      match.awayScore !== null &&
+      !(liveMode && String(match.sourceId) === SEED_SOURCE_ID),
   );
 
+  const alreadyEvaluated = new Set(
+    (await store.listPredictionEvaluations()).map((item) => item.predictionId),
+  );
+  const now = new Date();
   let evaluated = 0;
+  let skipped = 0;
   for (const match of finished) {
     const prediction = await store.getLatestPrediction(match.id);
     if (!prediction) continue;
-    evaluatePrediction(
+    if (alreadyEvaluated.has(prediction.id)) {
+      skipped += 1;
+      continue;
+    }
+    const actualHome = match.homeScore as number;
+    const actualAway = match.awayScore as number;
+    const evaluation = evaluatePrediction(
       prediction.predictedScore,
-      match.homeScore as number,
-      match.awayScore as number,
+      actualHome,
+      actualAway,
       prediction.outcomeProbabilities,
     );
+    await store.savePredictionEvaluation({
+      predictionId: prediction.id,
+      matchId: match.id,
+      modelVersion: prediction.modelVersion,
+      competitionId: match.competitionId,
+      kickoffAt: match.scheduledAt,
+      generatedAt: prediction.generatedAt,
+      generatedBeforeKickoff:
+        prediction.generatedAt.getTime() < match.scheduledAt.getTime(),
+      evaluatedAt: now,
+      confidence: prediction.confidence,
+      predictedHome: prediction.predictedScore.home,
+      predictedAway: prediction.predictedScore.away,
+      actualHome,
+      actualAway,
+      predictedOutcome: evaluation.predictedOutcome,
+      actualOutcome: evaluation.actualOutcome,
+      exactScore: evaluation.exactScore,
+      winnerHit: evaluation.winnerImpliedMatch,
+      brierScore: evaluation.brierScore,
+      logLoss: evaluation.logLoss,
+    });
     evaluated += 1;
   }
-  return { ok: true, detail: `evaluated:${evaluated}` };
+  return {
+    ok: true,
+    detail: `evaluated:${evaluated}${skipped > 0 ? `:already:${skipped}` : ''}`,
+  };
 }
 
 function parseSeason(value: unknown): number | null {

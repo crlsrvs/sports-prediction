@@ -11,6 +11,7 @@ import {
   type Competition,
   type Match,
   type MatchId,
+  type MatchOutcome,
   type MatchStatus,
   type OutcomeProbabilities,
   type Prediction,
@@ -28,6 +29,8 @@ import type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  PredictionEvaluationFilter,
+  PredictionEvaluationRecord,
   RawRecord,
   ResolveEntityResult,
   ScrapingJobRecord,
@@ -121,6 +124,30 @@ function mapUnresolved(row: Record<string, unknown>): UnresolvedEntity {
   };
 }
 
+function mapEvaluation(row: Record<string, unknown>): PredictionEvaluationRecord {
+  return {
+    predictionId: String(row['prediction_id']),
+    matchId: asMatchId(String(row['match_id'])),
+    modelVersion: String(row['model_version']),
+    competitionId: asCompetitionId(String(row['competition_id'])),
+    kickoffAt: new Date(String(row['kickoff_at'])),
+    generatedAt: new Date(String(row['generated_at'])),
+    generatedBeforeKickoff: Boolean(row['generated_before_kickoff']),
+    evaluatedAt: new Date(String(row['evaluated_at'])),
+    confidence: Number(row['confidence']),
+    predictedHome: Number(row['predicted_home']),
+    predictedAway: Number(row['predicted_away']),
+    actualHome: Number(row['actual_home']),
+    actualAway: Number(row['actual_away']),
+    predictedOutcome: String(row['predicted_outcome']) as MatchOutcome,
+    actualOutcome: String(row['actual_outcome']) as MatchOutcome,
+    exactScore: Boolean(row['exact_score']),
+    winnerHit: Boolean(row['winner_hit']),
+    brierScore: row['brier_score'] == null ? null : Number(row['brier_score']),
+    logLoss: row['log_loss'] == null ? null : Number(row['log_loss']),
+  };
+}
+
 function mapBacktestRun(row: Record<string, unknown>): BacktestRunRecord {
   const details = (row['details'] as BacktestRunRecord['details'] | null) ?? {
     byCompetition: [],
@@ -154,6 +181,7 @@ export class PostgresStore implements AppStore {
       '002_raw_and_aliases.sql',
       '003_probabilities_and_backtests.sql',
       '004_unresolved_provisional_team.sql',
+      '005_prediction_evaluations.sql',
     ] as const;
     for (const file of migrationFiles) {
       const sql = readFileSync(join(migrationsDir, file), 'utf8');
@@ -389,6 +417,75 @@ export class PostgresStore implements AppStore {
       [limit],
     );
     return result.rows.map((row) => mapBacktestRun(row));
+  }
+
+  async savePredictionEvaluation(
+    record: PredictionEvaluationRecord,
+  ): Promise<PredictionEvaluationRecord> {
+    await this.pool.query(
+      `INSERT INTO prediction_evaluations (
+         prediction_id, match_id, model_version, competition_id, kickoff_at,
+         generated_at, generated_before_kickoff, evaluated_at, confidence,
+         predicted_home, predicted_away, actual_home, actual_away,
+         predicted_outcome, actual_outcome, exact_score, winner_hit,
+         brier_score, log_loss
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+       )
+       ON CONFLICT (prediction_id) DO UPDATE SET
+         actual_home = EXCLUDED.actual_home,
+         actual_away = EXCLUDED.actual_away,
+         actual_outcome = EXCLUDED.actual_outcome,
+         exact_score = EXCLUDED.exact_score,
+         winner_hit = EXCLUDED.winner_hit,
+         brier_score = EXCLUDED.brier_score,
+         log_loss = EXCLUDED.log_loss,
+         evaluated_at = EXCLUDED.evaluated_at`,
+      [
+        record.predictionId,
+        record.matchId,
+        record.modelVersion,
+        record.competitionId,
+        record.kickoffAt.toISOString(),
+        record.generatedAt.toISOString(),
+        record.generatedBeforeKickoff,
+        record.evaluatedAt.toISOString(),
+        record.confidence,
+        record.predictedHome,
+        record.predictedAway,
+        record.actualHome,
+        record.actualAway,
+        record.predictedOutcome,
+        record.actualOutcome,
+        record.exactScore,
+        record.winnerHit,
+        record.brierScore,
+        record.logLoss,
+      ],
+    );
+    return record;
+  }
+
+  async listPredictionEvaluations(
+    filter: PredictionEvaluationFilter = {},
+  ): Promise<readonly PredictionEvaluationRecord[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (filter.modelVersion) {
+      params.push(filter.modelVersion);
+      conditions.push(`model_version = $${params.length}`);
+    }
+    if (filter.since) {
+      params.push(filter.since.toISOString());
+      conditions.push(`kickoff_at >= $${params.length}`);
+    }
+    if (filter.liveOnly) conditions.push('generated_before_kickoff = TRUE');
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = await this.pool.query(
+      `SELECT * FROM prediction_evaluations ${where} ORDER BY kickoff_at DESC`,
+      params,
+    );
+    return result.rows.map((row) => mapEvaluation(row));
   }
 
   async listSources(): Promise<readonly DataSourceRecord[]> {

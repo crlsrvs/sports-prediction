@@ -46,6 +46,7 @@ El archivo `.env` vive en la raíz y **nunca se commitea** (está en `.gitignore
 | `API_FOOTBALL_KEY` | vacío | Clave de API-Football. Sin ella, la fuente aparece como `disabled` y los jobs de ingesta se marcan `skipped`. |
 | `API_FOOTBALL_SEASON` | `2024` | Temporada por defecto para `import-season` cuando no se pasa una explícita. El plan gratuito solo permite 2022–2024. |
 | `FOOTBALL_DATA_KEY` | vacío | Token de football-data.org. Con él, `scrape-source` sincroniza la temporada en curso (fixtures y resultados). Sin él, la fuente aparece `disabled`. |
+| `JOB_SCHEDULER_ENABLED` | `true` | Si el worker registra las ejecuciones periódicas (`JOB_SCHEDULES`: sincronizar + predecir cada 6 h, limpiar RAW semanal). Ponlo en `false` si no quieres gastar cuota de API desde tu máquina. |
 
 ## Levantar el entorno de desarrollo
 

@@ -42,6 +42,7 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football
 | `unresolved_entities` | nombres de equipo que el ingest no pudo mapear: `incoming_name`, `source_id`, `created_at`, `provisional_team_id` (FK a `teams`, `ON DELETE SET NULL`). Al resolver, el equipo provisional se fusiona en el elegido, la fila se **borra** y el alias se añade a `teams.aliases` |
 | `entity_aliases` | `alias` → `team_id`, con `source_id` y `created_at`; `UNIQUE (alias, source_id)`. Preparada para registrar aliases por fuente; hoy el store expone `upsertEntityAlias`/`listEntityAliases` pero el ingest todavía resuelve con `teams.aliases` y nadie escribe en esta tabla |
 | `backtest_runs` | `model_version`, `ran_at`, `samples`, `exact_score_rate`, `winner_rate`, `mae_goals`, `brier_score`, `log_loss`, `details` (`JSONB`: `byCompetition`, `baselines`, `calibration`) |
+| `prediction_evaluations` | una fila por predicción evaluada (`prediction_id` PK, cascade al borrar la predicción): `match_id`, `model_version`, `competition_id`, `kickoff_at`, `generated_at`, `generated_before_kickoff`, marcador predicho/real, `predicted_outcome`/`actual_outcome`, `exact_score`, `winner_hit`, `brier_score`, `log_loss`. Índice por `(model_version, kickoff_at desc)` |
 
 ### Migraciones existentes
 
@@ -51,6 +52,7 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football
 | `002_raw_and_aliases.sql` | raw_records, entity_aliases |
 | `003_probabilities_and_backtests.sql` | `predictions.outcome_probabilities`, backtest_runs |
 | `004_unresolved_provisional_team.sql` | `unresolved_entities.provisional_team_id`, índices en `matches(home_team_id)` / `matches(away_team_id)` |
+| `005_prediction_evaluations.sql` | tabla `prediction_evaluations` (evaluación persistida de la temporada en vivo) |
 
 ## `AppStore`
 
@@ -75,7 +77,7 @@ Dos implementaciones, y las dos deben estar siempre al día:
 Ejemplo real: añadir `outcome_probabilities` a `predictions` (migración 003).
 
 1. **Dominio**: añade el campo al tipo (`Prediction.outcomeProbabilities`). El typecheck te mostrará cada sitio que construye el objeto.
-2. **Migración**: `004_<nombre>.sql` idempotente. Añádela a la lista `migrationFiles` en `PostgresStore.migrate`.
+2. **Migración**: `006_<nombre>.sql` idempotente. Añádela a la lista `migrationFiles` en `PostgresStore.migrate`.
 3. **PostgresStore**: `INSERT`/`UPDATE` con la columna nueva y el `map*` que la lee (`row['outcome_probabilities']`).
 4. **MemoryStore**: normalmente no hay que tocarlo (guarda el objeto entero), salvo métodos nuevos.
 5. **Seed**: si el tipo es obligatorio, actualiza `seed.ts`.
@@ -108,6 +110,10 @@ from scraping_jobs order by started_at desc limit 10;
 select model_version, ran_at, samples, round(winner_rate::numeric,3) winner,
        round(brier_score::numeric,4) brier, round(log_loss::numeric,4) logloss
 from backtest_runs order by ran_at desc limit 10;
+
+-- Temporada en vivo: cuántas predicciones reales (antes del partido) llevamos evaluadas
+select model_version, generated_before_kickoff, count(*), round(avg(brier_score)::numeric, 3) as brier
+from prediction_evaluations where kickoff_at >= '2026-07-01' group by 1, 2;
 
 -- equipos sin resolver
 select incoming_name, source_id, created_at from unresolved_entities order by created_at desc;

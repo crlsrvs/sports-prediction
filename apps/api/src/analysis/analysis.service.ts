@@ -29,8 +29,28 @@ import {
 } from '@sports-prediction/prediction';
 import { isWithinPredictionHorizon } from '@sports-prediction/shared';
 import { STORE } from '../store/store.tokens.js';
-import { summarizeBacktest, type BacktestSample } from './backtest.js';
+import {
+  summarizeBacktest,
+  type BacktestSample,
+  type BacktestSummary,
+} from './backtest.js';
 import { selectDashboardMatches } from './selectDashboardMatches.js';
+
+export interface LiveEvaluationSummary extends BacktestSummary {
+  readonly modelVersion: string;
+  readonly since: string;
+  readonly liveOnly: boolean;
+  /** Evaluations excluded because the prediction was generated after kickoff. */
+  readonly backfilled: number;
+  readonly firstKickoffAt: string | null;
+  readonly lastKickoffAt: string | null;
+}
+
+/** Football seasons start in July; everything from July 1st counts as "this season". */
+export function seasonStart(now: Date): Date {
+  const year = now.getUTCMonth() >= 6 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+  return new Date(Date.UTC(year, 6, 1));
+}
 
 function describeUnavailable(
   reason: 'missing_minimum_data' | 'missing_ratings' | 'invalid_cutoff',
@@ -405,6 +425,70 @@ export class AnalysisService {
 
   listBacktestRuns(limit = 20): Promise<readonly BacktestRunRecord[]> {
     return this.store.listBacktestRuns(limit);
+  }
+
+  /**
+   * How the model is doing on predictions that were actually stored and
+   * later resolved, as opposed to the backtest which re-runs the model.
+   * Defaults: current default model, season in progress, only predictions
+   * generated before kickoff (backfilled ones are counted separately).
+   */
+  async summarizeLiveEvaluations(
+    options: {
+      readonly modelVersion?: string;
+      readonly since?: Date;
+      readonly liveOnly?: boolean;
+    } = {},
+  ): Promise<LiveEvaluationSummary> {
+    const modelVersion = options.modelVersion ?? DEFAULT_MODEL_VERSION;
+    const since = options.since ?? seasonStart(new Date());
+    const liveOnly = options.liveOnly ?? true;
+
+    const [records, allRecords, competitions] = await Promise.all([
+      this.store.listPredictionEvaluations({ modelVersion, since, liveOnly }),
+      this.store.listPredictionEvaluations({ modelVersion, since }),
+      this.store.listCompetitions(),
+    ]);
+    const competitionsById = new Map(
+      competitions.map((item) => [String(item.id), item]),
+    );
+    const featured = records.filter(
+      (item) => competitionsById.get(String(item.competitionId))?.active === true,
+    );
+
+    const samples: BacktestSample[] = featured.map((item) => ({
+      competitionId: String(item.competitionId),
+      competitionName:
+        competitionsById.get(String(item.competitionId))?.name ??
+        String(item.competitionId),
+      confidence: item.confidence,
+      actualOutcome: item.actualOutcome,
+      evaluation: {
+        predictedHome: item.predictedHome,
+        predictedAway: item.predictedAway,
+        actualHome: item.actualHome,
+        actualAway: item.actualAway,
+        exactScore: item.exactScore,
+        winnerImpliedMatch: item.winnerHit,
+        predictedOutcome: item.predictedOutcome,
+        actualOutcome: item.actualOutcome,
+        brierScore: item.brierScore,
+        logLoss: item.logLoss,
+      },
+    }));
+    const kickoffs = featured.map((item) => item.kickoffAt.getTime());
+
+    return {
+      modelVersion,
+      since: since.toISOString(),
+      liveOnly,
+      backfilled: allRecords.length - records.length,
+      firstKickoffAt:
+        kickoffs.length > 0 ? new Date(Math.min(...kickoffs)).toISOString() : null,
+      lastKickoffAt:
+        kickoffs.length > 0 ? new Date(Math.max(...kickoffs)).toISOString() : null,
+      ...summarizeBacktest(samples),
+    };
   }
 
   private async toCard(matchId: string): Promise<MatchCard | null> {

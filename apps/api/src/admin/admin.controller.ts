@@ -38,8 +38,15 @@ import {
   SEED_SOURCE_ID,
   type JobName,
 } from '@sports-prediction/shared';
-import { AnalysisService } from '../analysis/analysis.service.js';
-import { enqueueJob } from '../jobs/jobQueue.js';
+import {
+  AnalysisService,
+  type LiveEvaluationSummary,
+} from '../analysis/analysis.service.js';
+import {
+  enqueueJob,
+  listSchedules,
+  type ScheduleStatus,
+} from '../jobs/jobQueue.js';
 import { STORE } from '../store/store.tokens.js';
 
 interface PingableAdapter {
@@ -263,9 +270,28 @@ export class AdminController {
     return this.store.listScrapingJobs();
   }
 
+  /** Recurring jobs declared in code and whether the worker registered them. */
+  @Get('schedules')
+  async listSchedules(): Promise<readonly ScheduleStatus[]> {
+    try {
+      return await listSchedules();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(
+        `No se pudo leer la programación (¿Redis activo?): ${message}`,
+      );
+    }
+  }
+
   @Post('jobs')
   async enqueue(
-    @Body() body: { readonly name?: string; readonly season?: number | string },
+    @Body()
+    body: {
+      readonly name?: string;
+      readonly season?: number | string;
+      /** For scrape-source: also generate and evaluate predictions afterwards. */
+      readonly chain?: boolean;
+    },
   ): Promise<{ readonly jobId: string; readonly name: JobName }> {
     if (!body.name || !isJobName(body.name)) {
       throw new BadRequestException(
@@ -273,6 +299,7 @@ export class AdminController {
       );
     }
     const data: Record<string, unknown> = {};
+    if (body.chain === true) data['chain'] = true;
     if (body.season !== undefined && body.season !== '') {
       const season = Number(body.season);
       if (!Number.isInteger(season) || season < 2000 || season > 2100) {
@@ -356,6 +383,38 @@ export class AdminController {
   @Post('backtests')
   runBacktest(@Body() body: { readonly model?: string } = {}) {
     return this.analysisService.runBacktest(body?.model || undefined);
+  }
+
+  /**
+   * Live-season scorecard built from persisted evaluations (no model re-run).
+   * `since` ISO date; `liveOnly=false` includes backfilled predictions.
+   */
+  @Get('evaluations/summary')
+  summarizeEvaluations(
+    @Query('model') model?: string,
+    @Query('since') since?: string,
+    @Query('liveOnly') liveOnly?: string,
+  ): Promise<LiveEvaluationSummary> {
+    const options: {
+      modelVersion?: string;
+      since?: Date;
+      liveOnly?: boolean;
+    } = {};
+    if (model) {
+      if (!this.analysisService.listModels().includes(model)) {
+        throw new BadRequestException(`Modelo desconocido: ${model}`);
+      }
+      options.modelVersion = model;
+    }
+    if (since) {
+      const parsed = new Date(since);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException('since debe ser una fecha ISO');
+      }
+      options.since = parsed;
+    }
+    if (liveOnly !== undefined) options.liveOnly = liveOnly !== 'false';
+    return this.analysisService.summarizeLiveEvaluations(options);
   }
 
   @Get('models')
