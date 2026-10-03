@@ -38,8 +38,9 @@ El archivo `.env` vive en la raíz y **nunca se commitea** (está en `.gitignore
 | Variable | Default | Para qué sirve |
 |---|---|---|
 | `NODE_ENV` | `development` | |
-| `DATABASE_URL` | `postgres://sports:sports@127.0.0.1:5432/sports_prediction` | Conexión a PostgreSQL. Si falta o la base no responde, la API cae a un store en memoria con datos de demo. |
+| `DATABASE_URL` | `postgres://sports:sports@127.0.0.1:5432/sports_prediction` | Conexión a PostgreSQL. Si está **vacía**, la API usa un store en memoria con datos de demo (modo demo explícito). Si está definida pero la base no responde, la API **no arranca**. |
 | `DATABASE_MAX_POOL_SIZE` | `10` | Tamaño del pool de `pg`. |
+| `STORE_ALLOW_MEMORY_FALLBACK` | `false` | Solo para demos: si `true`, cuando Postgres no responde se cae a memoria con un aviso en vez de fallar. Nunca en producción. |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Cola BullMQ. Necesario para encolar y ejecutar jobs. |
 | `PORT` | `3000` | Puerto de la API. |
 | `API_FOOTBALL_KEY` | vacío | Clave de API-Football. Sin ella, la fuente aparece como `disabled` y los jobs de ingesta se marcan `skipped`. |
@@ -55,7 +56,7 @@ npm run dev:worker   # Worker BullMQ; procesa los jobs de la cola "sports-predic
 npm run dev:web      # Vite en http://localhost:5173; proxy /api → http://127.0.0.1:3000
 ```
 
-Al arrancar la API verás en consola `App store mode: postgres` o `App store mode: memory`. Si ves `memory` y esperabas Postgres, revisa que Docker esté arriba y que `DATABASE_URL` sea correcta.
+Al arrancar la API verás en consola `App store mode: postgres` o `App store mode: memory` (este último solo si `DATABASE_URL` está vacía o permitiste el fallback). `GET /health` también lo expone: `{ "status": "ok", "store": "postgres", "storeReason": null }`.
 
 Abre <http://localhost:5173>:
 
@@ -94,8 +95,11 @@ Al arrancar por primera vez verás un banner "Datos demo (seed)". Para trabajar 
 
 ## Problemas frecuentes
 
-**La API arranca en modo `memory` aunque Docker está corriendo.**
-Comprueba `docker compose ps` (ambos servicios `healthy`) y que `DATABASE_URL` apunta a `127.0.0.1:5432`. La API hace `SELECT 1`, corre migraciones y siembra datos; cualquier fallo ahí la hace caer a memoria silenciosamente (es intencional para que la UI siempre funcione).
+**La API no arranca: `StoreConnectionError: PostgreSQL unavailable (...)`.**
+Es el comportamiento esperado cuando `DATABASE_URL` está definida pero la base no responde. Comprueba `docker compose ps` (ambos servicios `healthy`) y que `DATABASE_URL` apunta a `127.0.0.1:5432`. El mensaje incluye la causa (`ECONNREFUSED`, autenticación, etc.). Si solo quieres ver la UI sin base, vacía `DATABASE_URL` o pon `STORE_ALLOW_MEMORY_FALLBACK=true`.
+
+**La API arranca en modo `memory` y yo esperaba Postgres.**
+Entonces `DATABASE_URL` está vacía en tu `.env`, o tienes `STORE_ALLOW_MEMORY_FALLBACK=true` y la base falló (mira el `WARN` al arrancar o `storeReason` en `/health`).
 
 **"No se pudo encolar el job (¿Redis activo?)".**
 Redis no responde. `docker compose up -d redis`.

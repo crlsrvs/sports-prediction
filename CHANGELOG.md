@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Demo (seed) results no longer contaminate ratings or backtests once real data exists.
+- API/worker fail fast with `StoreConnectionError` when `DATABASE_URL` is set but
+  unreachable instead of silently serving demo data; opt-in fallback via
+  `STORE_ALLOW_MEMORY_FALLBACK`. `GET /health` reports the active store and reason.
+- Running a backtest is now `POST /admin/backtests`; `GET /admin/backtests` is read-only
+  (replaces `GET /admin/backtests/history`).
 
 ### Changed
 

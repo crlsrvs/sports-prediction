@@ -5,7 +5,7 @@
 - PostgreSQL es el sistema de registro. Driver `pg` directo, **sin ORM** (ADR 0002).
 - El esquema se versiona en SQL plano: `packages/database/src/migrations/NNN_nombre.sql`.
 - Las migraciones son idempotentes (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) y se ejecutan **todas, en orden, en cada arranque** de API y worker (`PostgresStore.migrate(pool)`). No hay tabla de control de versiones; la idempotencia es la garantía.
-- Si Postgres no está disponible, `createAppStore()` devuelve `MemoryStore.seeded()` y la app sigue funcionando con datos de demo. Es cómodo para la UI y peligroso si no lo sabes: mira el log `App store mode:`.
+- `createAppStore()` elige el store: sin `DATABASE_URL` → memoria sembrada (demo explícito); con `DATABASE_URL` alcanzable → Postgres; con `DATABASE_URL` inalcanzable → lanza `StoreConnectionError` (la API no arranca, el job del worker falla) salvo que `STORE_ALLOW_MEMORY_FALLBACK=true`, en cuyo caso cae a memoria avisando. El modo y el motivo se exponen en `GET /health`.
 
 ## Tablas
 

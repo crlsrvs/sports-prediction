@@ -12,7 +12,7 @@
 
 | Método y ruta | Devuelve | Notas |
 |---|---|---|
-| `GET /health` | `{ status: 'ok' }` | liveness |
+| `GET /health` | `{ status: 'ok', store: 'postgres' \| 'memory', storeReason }` | liveness + qué store está activo y por qué |
 | `GET /meta` | `{ dataMode: 'seed' \| 'live' }` | el dashboard lo usa para el banner |
 | `GET /sports` | `Sport[]` | |
 | `GET /competitions` | `Competition[]` | **solo `active: true`** (ligas visibles) |
@@ -60,12 +60,10 @@ Nota: la respuesta incluye `prediction.outcomeProbabilities`. La página públic
 | `POST /admin/predictions/generate` | | predice todos los `scheduled` sin predicción |
 | `POST /admin/predictions/regenerate` | `{ force?: boolean }` | re-predice partidos *featured* cuya última predicción no sea del modelo actual; con `force`, todos. Las predicciones viejas se conservan |
 | `GET /admin/models` | | `{ default, available }` |
-| `GET /admin/backtests` | `?model=football-v3` | **ejecuta** un backtest y lo persiste; devuelve `BacktestRunRecord` |
-| `GET /admin/backtests/history` | | últimas 20 corridas |
+| `GET /admin/backtests` | `?limit=20` | corridas persistidas, más reciente primero (máx. 100). Solo lectura |
+| `POST /admin/backtests` | `{ model? }` | **ejecuta** un backtest walk-forward (modelo por defecto si no se indica) y lo persiste; devuelve `BacktestRunRecord`. 400 si el modelo no existe |
 | `POST /admin/sports` | `{ name, slug }` | |
 | `POST /admin/competitions` | `{ name, sportId, country? }` | |
-
-> `GET /admin/backtests` tiene efecto secundario (persiste) aunque sea GET. Es deliberado para poder dispararlo desde el navegador; si se expone fuera, convertirlo a POST.
 
 ### Ejemplos con `curl`
 
@@ -74,7 +72,9 @@ curl -s localhost:3000/matches/today | jq '.[0].match'
 curl -s localhost:3000/matches/match-af-1208828/analysis | jq '.prediction'
 curl -s -X POST localhost:3000/admin/jobs -H 'Content-Type: application/json' \
      -d '{"name":"import-season","season":2023}'
-curl -s "localhost:3000/admin/backtests?model=football-v2" | jq '{samples, winnerRate, brierScore}'
+curl -s -X POST localhost:3000/admin/backtests -H 'Content-Type: application/json' \
+     -d '{"model":"football-v2"}' | jq '{samples, winnerRate, brierScore}'
+curl -s "localhost:3000/admin/backtests?limit=5" | jq '.[] | {modelVersion, brierScore}'
 curl -s -X POST localhost:3000/admin/predictions/regenerate -H 'Content-Type: application/json' -d '{"force":true}'
 ```
 
@@ -130,7 +130,7 @@ Contadores, acciones (generar, regenerar, regenerar forzado), botones de jobs (c
 
 ### `BacktestPanel`
 
-Carga `/admin/models` y `/admin/backtests/history`. Permite elegir modelo y ejecutar. Muestra: tabla "última corrida por modelo" (para comparar v1/v2/v3 de un vistazo), líneas base, por competición y calibración de la corrida seleccionada. Todo lo que ves ahí sale de `summarizeBacktest`.
+Carga `/admin/models` y `GET /admin/backtests`. Permite elegir modelo y ejecutar (`POST /admin/backtests`). Muestra: tabla "última corrida por modelo" (para comparar v1/v2/v3 de un vistazo), líneas base, por competición y calibración de la corrida seleccionada. Todo lo que ves ahí sale de `summarizeBacktest`.
 
 ### Añadir una pantalla
 

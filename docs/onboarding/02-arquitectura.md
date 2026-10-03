@@ -132,7 +132,7 @@ Reglas: `domain` y `shared` no dependen de nadie. `features`, `prediction`, `nor
 - `store/postgresStore.ts`: implementación `pg`, con `migrate()` y `seedIfEmpty()`.
 - `store/seed.ts`: datos de demostración (3 competiciones, 8 equipos, 26 resultados ficticios, 3 partidos programados).
 - `migrations/*.sql`: esquema versionado.
-- `createStore.ts`: `createAppStore(env)` decide entre Postgres y memoria.
+- `createStore.ts`: `createAppStore(env)` decide entre Postgres y memoria; falla con `StoreConnectionError` si la base configurada no responde (fallback a memoria solo con `STORE_ALLOW_MEMORY_FALLBACK=true`).
 
 ### `apps/api`
 

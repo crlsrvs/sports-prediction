@@ -100,8 +100,8 @@ Porque las generamos para todo el historial (con corte previo al partido) y así
 **¿Puedo borrar predicciones viejas?**
 No deberías. Son parte de la trazabilidad (`modelVersion` + `dataCutoffAt`). Regenerar añade, no reemplaza.
 
-**¿Por qué la API cae a memoria en silencio?**
-Para que la UI siempre tenga algo que mostrar en demos. En un entorno real conviene que falle alto; es una mejora pendiente (flag `STORE_REQUIRE_POSTGRES` o similar).
+**¿Cuándo usa la API el store en memoria?**
+Solo si `DATABASE_URL` está vacía (modo demo explícito) o si `STORE_ALLOW_MEMORY_FALLBACK=true` y Postgres falló (con `WARN` en consola y `storeReason` en `/health`). Si `DATABASE_URL` está definida y la base no responde, la API y el worker fallan con `StoreConnectionError` y la causa. Antes caía a memoria en silencio y una caída real parecía "datos demo".
 
 **¿Dónde pongo una llamada HTTP a una API externa desde la API de NestJS?**
 En principio en ningún sitio: las llamadas externas van al worker vía job. La única excepción actual es `POST /admin/sources/:id/test` (un `ping`), porque el admin quiere respuesta inmediata.

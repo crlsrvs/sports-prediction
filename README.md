@@ -44,7 +44,7 @@ npm run dev:worker
 2. Click **Analizar** to open match analysis (score estimate, factors, charts).
 3. Open **Admin** to test sources, enqueue jobs, resolve entities, generate predictions, and run backtesting.
 
-If PostgreSQL is unavailable, the API automatically falls back to a seeded in-memory store.
+Leave `DATABASE_URL` empty to run on a seeded in-memory store (demo mode). If `DATABASE_URL` is set but unreachable, API and worker refuse to start; set `STORE_ALLOW_MEMORY_FALLBACK=true` only for demos. `GET /health` reports the active store.
 
 ### Live data (API-Football)
 

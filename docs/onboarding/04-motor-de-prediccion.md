@@ -166,7 +166,7 @@ Por competición (v3): Premier 0.578, La Liga 0.591, Champions 0.574. Para conte
 3. Regístralo en `engine.ts` (`ENGINES`). **No** cambies `DEFAULT_MODEL_VERSION` todavía.
 4. Escribe `footballV4.spec.ts`: probabilidades suman 1, marcador coherente con el favorito, `invalid_cutoff`, y al menos una propiedad específica del modelo.
 5. Exporta desde `index.ts`.
-6. Levanta la API y compara: `GET /admin/backtests?model=football-v4` vs `?model=football-v3`. Mira Brier/log loss **y** calibración. Si tiene hiperparámetros, haz un barrido con un script temporal fuera del repo (ver [07-flujo-de-trabajo](./07-flujo-de-trabajo.md#experimentos-con-el-modelo)).
+6. Levanta la API y compara: `POST /admin/backtests {"model":"football-v4"}` vs `{"model":"football-v3"}` (o desde Admin → Evaluación de modelos). Mira Brier/log loss **y** calibración. Si tiene hiperparámetros, haz un barrido con un script temporal fuera del repo (ver [07-flujo-de-trabajo](./07-flujo-de-trabajo.md#experimentos-con-el-modelo)).
 7. Solo si mejora de forma consistente (global y por competición, sin romper calibración): cambia `DEFAULT_MODEL_VERSION`, actualiza el CHANGELOG y, tras desplegar, ejecuta "Regenerar con modelo actual" en Admin.
 
 ## Qué no hace el modelo (y por qué)

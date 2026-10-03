@@ -159,10 +159,11 @@ export const api = {
     }),
   getPredictions: () => request<Prediction[]>('/admin/predictions'),
   runBacktest: (model?: string) =>
-    request<BacktestRunDto>(
-      model ? `/admin/backtests?model=${encodeURIComponent(model)}` : '/admin/backtests',
-    ),
-  getBacktestHistory: () => request<BacktestRunDto[]>('/admin/backtests/history'),
+    request<BacktestRunDto>('/admin/backtests', {
+      method: 'POST',
+      body: JSON.stringify(model ? { model } : {}),
+    }),
+  getBacktestHistory: () => request<BacktestRunDto[]>('/admin/backtests'),
   getModels: () => request<ModelsDto>('/admin/models'),
   generatePredictions: () =>
     request<{ generated: number }>('/admin/predictions/generate', {

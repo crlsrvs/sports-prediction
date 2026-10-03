@@ -284,14 +284,19 @@ export class AdminController {
     return this.store.listPredictions();
   }
 
+  /** Lists persisted backtest runs (most recent first). Read-only. */
   @Get('backtests')
-  runBacktest(@Query('model') model?: string) {
-    return this.analysisService.runBacktest(model || undefined);
+  listBacktests(@Query('limit') limit?: string) {
+    const parsed = Number(limit);
+    return this.analysisService.listBacktestRuns(
+      Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : 20,
+    );
   }
 
-  @Get('backtests/history')
-  listBacktests() {
-    return this.analysisService.listBacktestRuns();
+  /** Runs a walk-forward backtest for `model` and persists the result. */
+  @Post('backtests')
+  runBacktest(@Body() body: { readonly model?: string } = {}) {
+    return this.analysisService.runBacktest(body?.model || undefined);
   }
 
   @Get('models')
