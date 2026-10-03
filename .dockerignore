@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.env
+.env.*
+.git
+.github
+.codegraph
+coverage
+docs
+playwright-report
+test-results
+apps/web/dist

@@ -1,0 +1,61 @@
+# Render Blueprint for the API and the worker (frontend goes to Vercel,
+# PostgreSQL to Neon, Redis to Upstash; see docs/onboarding/09-ci-y-despliegue.md).
+#
+# Secrets (DATABASE_URL, REDIS_URL, API keys) are declared with sync: false so
+# Render asks for them on first deploy and never stores them in the repo.
+
+services:
+  - type: web
+    name: sports-prediction-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: npx tsx --tsconfig apps/api/tsconfig.json apps/api/src/main.ts
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: STORE_ALLOW_MEMORY_FALLBACK
+        value: "false"
+      - key: DATABASE_MAX_POOL_SIZE
+        value: "5"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: FOOTBALL_DATA_KEY
+        sync: false
+
+  - type: worker
+    name: sports-prediction-worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: npx tsx --tsconfig apps/worker/tsconfig.json apps/worker/src/main.ts
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORE_ALLOW_MEMORY_FALLBACK
+        value: "false"
+      - key: DATABASE_MAX_POOL_SIZE
+        value: "3"
+      - key: JOB_SCHEDULER_ENABLED
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: FOOTBALL_DATA_KEY
+        sync: false
+      - key: API_FOOTBALL_SEASON
+        value: "2024"

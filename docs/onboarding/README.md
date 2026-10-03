@@ -14,6 +14,7 @@ Léela en orden la primera vez; después úsala como referencia.
 | 6 | [Base de datos](./06-base-de-datos.md) | ¿Qué tablas hay? ¿Cómo agrego una migración? ¿Qué es `AppStore`? |
 | 7 | [Flujo de trabajo](./07-flujo-de-trabajo.md) | ¿Cómo se trabaja aquí? Git, tests, convenciones, definición de hecho, recetas para tareas comunes. |
 | 8 | [Glosario y FAQ](./08-glosario-y-faq.md) | Términos del dominio y de modelado, y preguntas frecuentes. |
+| 9 | [CI y despliegue](./09-ci-y-despliegue.md) | ¿Qué corre en cada PR? ¿Cómo se empaquetan API y worker? ¿Cómo se despliega en Vercel, Neon, Upstash y Render? |
 
 ## Otros documentos que debes conocer
 

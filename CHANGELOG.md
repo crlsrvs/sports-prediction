@@ -62,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prediction_evaluations` (migration 005); `GET /admin/evaluations/summary` and an
   Admin "Temporada en vivo" panel separate from the backtest.
 
+- CI workflow (typecheck, lint, test, build, Docker images) and deployment assets:
+  root `Dockerfile` (`APP=api|worker`, runs TypeScript with `tsx`), `render.yaml`
+  blueprint, `apps/web/vercel.json`, `VITE_API_URL`, and an optional `ADMIN_TOKEN`
+  guard for `/admin/*` (`x-admin-token`, `VITE_ADMIN_TOKEN`). See ADR 0004 and
+  `docs/onboarding/09-ci-y-despliegue.md`.
+
 ### Fixed
 
 - Demo (seed) results no longer contaminate ratings or backtests once real data exists.

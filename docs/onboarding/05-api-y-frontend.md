@@ -5,7 +5,7 @@
 - Puerto `3000`, sin prefijo global. El frontend llama a `/api/...` y Vite reescribe a `/...`.
 - CORS abierto (`origin: true`) en desarrollo.
 - Un solo módulo raíz (`app.module.ts`) con 4 controllers y 1 servicio; `StoreModule` es `@Global()` y provee `AppStore` bajo el token `STORE`.
-- Sin autenticación (fuera del MVP). **Los endpoints `/admin/*` no deben exponerse públicamente en un despliegue**; hoy se asume red de confianza.
+- Sin autenticación de usuarios (fuera del MVP). En despliegue, `/admin/*` se protege con un secreto compartido: si la API tiene `ADMIN_TOKEN`, exige la cabecera `x-admin-token` (`AdminTokenGuard`, 401 si falta). En local la variable va vacía y todo queda abierto. Ver [09-ci-y-despliegue](./09-ci-y-despliegue.md).
 - Errores: Nest devuelve `{ statusCode, message, error }`. Los mensajes de usuario están en español. Nunca filtramos trazas internas de scraping al cliente público; el Admin sí recibe el `detail` crudo.
 
 ### Endpoints públicos

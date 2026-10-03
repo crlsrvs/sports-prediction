@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import type {
   AppStore,
@@ -42,6 +43,7 @@ import {
   AnalysisService,
   type LiveEvaluationSummary,
 } from '../analysis/analysis.service.js';
+import { AdminTokenGuard } from './adminToken.guard.js';
 import {
   enqueueJob,
   listSchedules,
@@ -75,6 +77,7 @@ const PINGABLE_PROVIDERS: Readonly<Record<string, PingableProvider>> = {
 };
 
 @Controller('admin')
+@UseGuards(AdminTokenGuard)
 export class AdminController {
   constructor(
     @Inject(STORE) private readonly store: AppStore,

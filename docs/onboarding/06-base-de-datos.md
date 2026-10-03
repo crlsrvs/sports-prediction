@@ -128,4 +128,4 @@ docker compose down -v && docker compose up -d
 
 ## Despliegue previsto
 
-PostgreSQL en Neon y Redis en Upstash (ambos con tier gratuito). Las migraciones se aplican solas al arrancar la API, así que no hay paso de despliegue adicional; sí conviene que API y worker no arranquen exactamente a la vez la primera vez (las migraciones son idempotentes pero no están serializadas con un lock).
+PostgreSQL en Neon y Redis en Upstash (ambos con tier gratuito). Las migraciones se aplican solas al arrancar la API, así que no hay paso de despliegue adicional; sí conviene que API y worker no arranquen exactamente a la vez la primera vez (las migraciones son idempotentes pero no están serializadas con un lock). El paso a paso completo está en [09-ci-y-despliegue](./09-ci-y-despliegue.md).

@@ -133,10 +133,21 @@ export interface ModelsDto {
   readonly available: readonly string[];
 }
 
+/**
+ * In development Vite proxies `/api` to the local API. In production the
+ * frontend lives on another origin, so the API URL is baked in at build time.
+ */
+export const API_BASE_URL: string = (
+  import.meta.env.VITE_API_URL?.trim() || '/api'
+).replace(/\/+$/, '');
+
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN?.trim() ?? '';
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...(ADMIN_TOKEN && path.startsWith('/admin') ? { 'x-admin-token': ADMIN_TOKEN } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
