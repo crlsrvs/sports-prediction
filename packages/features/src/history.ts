@@ -1,5 +1,5 @@
 import type { Match } from '@sports-prediction/domain';
-import { API_FOOTBALL_SOURCE_ID, SEED_SOURCE_ID } from '@sports-prediction/shared';
+import { isLiveSourceId, SEED_SOURCE_ID } from '@sports-prediction/shared';
 import type { FinishedMatchResult } from './buildFeatureSnapshot.js';
 
 /**
@@ -10,8 +10,8 @@ import type { FinishedMatchResult } from './buildFeatureSnapshot.js';
 export function buildFinishedHistory(
   matches: readonly Match[],
 ): FinishedMatchResult[] {
-  const hasLiveData = matches.some(
-    (match) => String(match.sourceId) === API_FOOTBALL_SOURCE_ID,
+  const hasLiveData = matches.some((match) =>
+    isLiveSourceId(String(match.sourceId)),
   );
   return matches
     .filter(

@@ -6,7 +6,7 @@
 
 **Competición featured / support.** Featured: liga visible en el producto (`Competition.active = true`): UCL, Premier, La Liga. Support: liga que solo alimenta el modelo (`active = false`): Bundesliga, Serie A, Ligue 1.
 
-**Data mode (`seed` / `live`).** `live` si existe al menos un partido de API-Football; si no, `seed`. Determina el banner del dashboard y si el historial descarta los resultados de demostración.
+**Data mode (`seed` / `live`).** `live` si existe al menos un partido de una fuente real (`isLiveSourceId`: cualquiera distinta del seed); si no, `seed`. Determina el banner del dashboard y si el historial descarta los resultados de demostración.
 
 **Entidad sin resolver.** Nombre de equipo que llegó de una fuente y no coincidió con ningún equipo conocido ni alias. Se crea un equipo provisional (`team-af-<id>`) y se pide revisión en Admin.
 
@@ -82,14 +82,14 @@
 
 **Scraping job (registro).** Fila en `scraping_jobs` que documenta una ejecución de ingesta con estado honesto.
 
-**Adapter.** Implementación de una fuente externa: fetcher + parser (+ ingest). Hoy solo API-Football.
+**Adapter.** Implementación de una fuente externa: fetcher + parser + función de normalización a `NormalizedFixture`. Hoy: API-Football (historial 2022–2024) y football-data.org (temporada en curso).
 
 **Migración.** Archivo SQL idempotente en `packages/database/src/migrations`, aplicado en orden en cada arranque.
 
 ## Preguntas frecuentes
 
 **¿Por qué el dashboard muestra partidos de mayo de 2025 si estamos en octubre de 2026?**
-Porque el plan gratuito de API-Football no da la temporada en curso. Mostramos la jornada real más reciente que tenemos antes que datos inventados. La solución es otra fuente (football-data.org está evaluada como siguiente paso).
+Porque no tienes `FOOTBALL_DATA_KEY` o no has ejecutado `scrape-source`. Sin temporada en curso mostramos la jornada real más reciente antes que datos inventados. Con la clave, el dashboard muestra los partidos de hoy o la próxima jornada.
 
 **¿Por qué el modelo casi nunca predice empate como marcador?**
 Porque el marcador titular es el más probable del resultado más probable, y el empate rara vez es el resultado individual más probable (suele rondar 20–30 %). Las probabilidades de empate sí están calibradas y se ven en Admin. Mostrar 1X2 al usuario está previsto para V2 en el PRD.
@@ -125,4 +125,4 @@ El matcher devolvería el primero. No ha ocurrido en 234 equipos, pero es un rie
 Casi siempre es porque cambiaste un tipo del dominio (p. ej. añadiste un campo obligatorio a `FeatureSnapshot`) y hay fixtures de test que lo construyen a mano. Actualízalos; es la señal de que el cambio se propagó bien.
 
 **¿Qué sigue en el roadmap técnico?**
-En orden de valor/costo: fuente con temporada en curso; RPS y métricas por temporada en el backtest; scheduler de jobs; datos de alineaciones/lesiones para `injuryImpact`. El PRD (§49–54) detalla las iteraciones de producto.
+En orden de valor/costo: scheduler de jobs (`scrape-source` diario, `generate-predictions` tras cada sync); RPS y métricas por temporada en el backtest; CI; datos de alineaciones/lesiones para `injuryImpact`. El PRD (§49–54) detalla las iteraciones de producto.

@@ -46,15 +46,17 @@ npm run dev:worker
 
 Leave `DATABASE_URL` empty to run on a seeded in-memory store (demo mode). If `DATABASE_URL` is set but unreachable, API and worker refuse to start; set `STORE_ALLOW_MEMORY_FALLBACK=true` only for demos. `GET /health` reports the active store.
 
-### Live data (API-Football)
+### Live data
 
-1. Set `API_FOOTBALL_KEY` in `.env` (optional: `API_FOOTBALL_SEASON=2024`).
+Two free providers: **API-Football** for history (seasons 2022–2024) and **football-data.org** for the season in progress.
+
+1. Set `API_FOOTBALL_KEY` and `FOOTBALL_DATA_KEY` in `.env`.
 2. Start Redis (`docker compose up -d`) plus `npm run dev:api`, `npm run dev:worker`, and `npm run dev:web`.
-3. In Admin, **Probar** the API-Football source, then enqueue `import-season` for 2022, 2023 and 2024 (6 leagues each; wait ~1 min between them to respect the free-plan rate limit).
-4. Click **Regenerar todas (forzar)** so every prediction uses the full history.
-5. The dashboard banner switches from seed demo to live and shows the latest real matchday per league.
+3. In Admin, **Probar** each source, then enqueue `import-season` for 2022, 2023 and 2024 (6 leagues each; wait ~1 min between them) and `scrape-source` for the current season (fixtures + results, 6 requests).
+4. Resolve duplicate teams in **Entidades sin resolver** (name variants between providers are merged automatically into one team), then **Regenerar todas (forzar)**.
+5. The dashboard shows today's fixtures or the next matchday with predictions.
 
-**Free-plan limits:** seasons 2022–2024 only, no current season, no `last`/`next`, `?date=` only within a ~3-day window. See [docs/onboarding/03-datos-e-ingesta.md](./docs/onboarding/03-datos-e-ingesta.md).
+Both free tiers allow 10 requests/minute. See [docs/onboarding/03-datos-e-ingesta.md](./docs/onboarding/03-datos-e-ingesta.md).
 
 ### Prediction models
 

@@ -26,7 +26,7 @@ Léela en orden la primera vez; después úsala como referencia.
 
 - **Producto**: dashboard de "Partidos de hoy", página de análisis por partido (marcador estimado, goles esperados, factores explicativos, comparación de equipos) y panel Admin interno. Idioma: español.
 - **Deporte y competiciones visibles**: fútbol; UEFA Champions League, Premier League y La Liga.
-- **Datos reales**: temporadas 2022/23, 2023/24 y 2024/25 importadas desde API-Football (plan gratuito). Además de las tres ligas visibles, se ingieren Bundesliga, Serie A y Ligue 1 como *ligas de soporte*: alimentan el modelo pero no aparecen en el producto.
+- **Datos reales**: historial 2022/23–2024/25 desde API-Football (plan gratuito) y la temporada en curso (fixtures y resultados) desde football-data.org. Además de las tres ligas visibles, se ingieren Bundesliga, Serie A y Ligue 1 como *ligas de soporte*: alimentan el modelo pero no aparecen en el producto.
 - **Modelo por defecto**: `football-v3` (Dixon-Coles). Se conservan `football-v1` y `football-v2` para comparar en backtesting.
 - **Calidad medida** (backtest walk-forward sobre ~2 900 partidos reales): acierto de ganador 53.9 %, Brier 0.582, log loss 0.978, confianza calibrada (±4 puntos entre confianza declarada y acierto observado).
 - **Fuera del MVP**: 1X2 visible al usuario final, cuotas de apuestas, cuentas de usuario, predicciones en vivo, explicaciones generadas por LLM.

@@ -91,8 +91,8 @@ Documentación en código: TSDoc **solo** para intención de negocio, lógica no
 
 ### Añadir una liga
 
-1. Línea en `API_FOOTBALL_COMPETITIONS` (`packages/scraping/src/apiFootball.ts`) con `role: 'featured' | 'support'`.
-2. Encolar `import-season` para cada temporada.
+1. Línea en `TRACKED_COMPETITIONS` (`packages/scraping/src/competitions.ts`) con `role: 'featured' | 'support'`, `apiFootballLeagueId` y `footballDataCode`.
+2. Encolar `import-season` para cada temporada histórica y `scrape-source` para la actual.
 3. Si es `featured`, verificar que el dashboard la muestra y correr backtest para ver su Brier.
 
 ### Añadir un job

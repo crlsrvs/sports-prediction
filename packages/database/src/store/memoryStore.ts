@@ -7,7 +7,7 @@ import {
   type Sport,
   type Team,
 } from '@sports-prediction/domain';
-import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
+import { isLiveSourceId } from '@sports-prediction/shared';
 import { createSeedData } from './seed.js';
 import type {
   AppStore,
@@ -278,8 +278,8 @@ export class MemoryStore implements AppStore {
   }
 
   async getDataMode(): Promise<DataMode> {
-    const hasLive = [...this.matches.values()].some(
-      (match) => String(match.sourceId) === API_FOOTBALL_SOURCE_ID,
+    const hasLive = [...this.matches.values()].some((match) =>
+      isLiveSourceId(String(match.sourceId)),
     );
     return hasLive ? 'live' : 'seed';
   }

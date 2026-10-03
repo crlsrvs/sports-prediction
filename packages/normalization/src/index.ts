@@ -1,2 +1,2 @@
 export { matchTeamByAlias, type EntityMatchCandidate } from './entityMatcher.js';
-export { normalizeEntityText } from './normalizeText.js';
+export { normalizeClubName, normalizeEntityText } from './normalizeText.js';

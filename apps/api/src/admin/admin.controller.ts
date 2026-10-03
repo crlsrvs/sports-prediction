@@ -26,9 +26,13 @@ import {
   type Team,
 } from '@sports-prediction/domain';
 import { DEFAULT_MODEL_VERSION } from '@sports-prediction/prediction';
-import { createApiFootballAdapterFromEnv } from '@sports-prediction/scraping';
+import {
+  createApiFootballAdapterFromEnv,
+  createFootballDataAdapterFromEnv,
+} from '@sports-prediction/scraping';
 import {
   API_FOOTBALL_SOURCE_ID,
+  FOOTBALL_DATA_SOURCE_ID,
   isJobName,
   JOB_NAMES,
   SEED_SOURCE_ID,
@@ -37,6 +41,31 @@ import {
 import { AnalysisService } from '../analysis/analysis.service.js';
 import { enqueueJob } from '../jobs/jobQueue.js';
 import { STORE } from '../store/store.tokens.js';
+
+interface PingableAdapter {
+  readonly name: string;
+  ping(): Promise<{ readonly ok: boolean; readonly results: number }>;
+}
+
+interface PingableProvider {
+  readonly slug: string;
+  readonly envKey: string;
+  readonly create: () => PingableAdapter | null;
+}
+
+/** External sources the admin "test" button can reach, keyed by source id. */
+const PINGABLE_PROVIDERS: Readonly<Record<string, PingableProvider>> = {
+  [API_FOOTBALL_SOURCE_ID]: {
+    slug: 'api-football',
+    envKey: 'API_FOOTBALL_KEY',
+    create: () => createApiFootballAdapterFromEnv(),
+  },
+  [FOOTBALL_DATA_SOURCE_ID]: {
+    slug: 'football-data',
+    envKey: 'FOOTBALL_DATA_KEY',
+    create: () => createFootballDataAdapterFromEnv(),
+  },
+};
 
 @Controller('admin')
 export class AdminController {
@@ -133,8 +162,9 @@ export class AdminController {
       };
     }
 
-    if (String(current.id) === API_FOOTBALL_SOURCE_ID) {
-      const adapter = createApiFootballAdapterFromEnv();
+    const provider = PINGABLE_PROVIDERS[String(current.id)];
+    if (provider) {
+      const adapter = provider.create();
       if (!adapter) {
         await this.store.addScrapingJob({
           id: `job-${crypto.randomUUID()}`,
@@ -145,7 +175,7 @@ export class AdminController {
           recordsFound: 0,
           recordsProcessed: 0,
           recordsFailed: 0,
-          error: 'API_FOOTBALL_KEY not configured',
+          error: `${provider.envKey} not configured`,
         });
         const source = await this.store.upsertSource({
           ...current,
@@ -154,14 +184,14 @@ export class AdminController {
         });
         return {
           source,
-          detail: 'skipped:missing-api-football-key',
+          detail: `skipped:missing-${provider.slug}-key`,
         };
       }
 
       try {
         const ping = await adapter.ping();
         if (!ping.ok) {
-          throw new Error('API-Football ping failed');
+          throw new Error(`${adapter.name} ping failed`);
         }
         await this.store.addScrapingJob({
           id: `job-${crypto.randomUUID()}`,
@@ -183,7 +213,7 @@ export class AdminController {
         });
         return {
           source,
-          detail: `api-football-ok:${ping.results}`,
+          detail: `${provider.slug}-ok:${ping.results}`,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -206,7 +236,7 @@ export class AdminController {
         });
         return {
           source,
-          detail: `api-football-failed:${message}`,
+          detail: `${provider.slug}-failed:${message}`,
         };
       }
     }

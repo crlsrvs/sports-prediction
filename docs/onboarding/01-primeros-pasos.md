@@ -9,7 +9,7 @@
 | Docker + Docker Compose | cualquier versión reciente | Para PostgreSQL y Redis locales. |
 | Git | — | |
 
-Opcional: una clave gratuita de [API-Football](https://www.api-football.com/) para trabajar con datos reales. Sin ella la app funciona con datos de demostración.
+Opcional, para datos reales: una clave gratuita de [football-data.org](https://www.football-data.org/) (temporada en curso) y otra de [API-Football](https://www.api-football.com/) (historial 2022–2024). Sin ellas la app funciona con datos de demostración.
 
 ## Instalación
 
@@ -45,6 +45,7 @@ El archivo `.env` vive en la raíz y **nunca se commitea** (está en `.gitignore
 | `PORT` | `3000` | Puerto de la API. |
 | `API_FOOTBALL_KEY` | vacío | Clave de API-Football. Sin ella, la fuente aparece como `disabled` y los jobs de ingesta se marcan `skipped`. |
 | `API_FOOTBALL_SEASON` | `2024` | Temporada por defecto para `import-season` cuando no se pasa una explícita. El plan gratuito solo permite 2022–2024. |
+| `FOOTBALL_DATA_KEY` | vacío | Token de football-data.org. Con él, `scrape-source` sincroniza la temporada en curso (fixtures y resultados). Sin él, la fuente aparece `disabled`. |
 
 ## Levantar el entorno de desarrollo
 
@@ -68,13 +69,15 @@ Abre <http://localhost:5173>:
 
 Al arrancar por primera vez verás un banner "Datos demo (seed)". Para trabajar con partidos reales:
 
-1. Pon tu clave en `.env`: `API_FOOTBALL_KEY=...` y reinicia API y worker.
-2. En Admin → Fuentes, pulsa **Probar** en "API-Football". Debe quedar `healthy`.
-3. En Admin → Jobs en cola, escribe una temporada (2022, 2023 o 2024) y pulsa `import-season`. El worker descarga las 6 ligas de esa temporada (~2 000 partidos, 6 requests). Repite para las tres temporadas si quieres el dataset completo; espera ~1 minuto entre ellas porque el plan gratuito limita a 10 requests/minuto.
-4. Pulsa **Regenerar todas (forzar)** para que todas las predicciones se calculen con el historial nuevo.
-5. Vuelve al dashboard: el banner cambia a "live" y verás la última jornada disponible de cada liga.
+1. Pon tus claves en `.env` (`API_FOOTBALL_KEY=...`, `FOOTBALL_DATA_KEY=...`) y reinicia API y worker.
+2. En Admin → Fuentes, pulsa **Probar** en cada fuente. Deben quedar `healthy`.
+3. **Historial** (API-Football): en Admin → Jobs en cola, escribe una temporada (2022, 2023 o 2024) y pulsa `import-season`. El worker descarga las 6 ligas de esa temporada (~2 000 partidos, 6 requests). Repite para las tres; espera ~1 minuto entre ellas (10 requests/minuto).
+4. **Temporada en curso** (football-data.org): pulsa `scrape-source`. Trae programados y resultados de las 6 competiciones (~1 900 partidos, 6 requests). Es el job que conviene repetir a diario.
+5. Admin → Entidades sin resolver: los clubes que el ingest no pudo casar (ascendidos nuevos o variantes de nombre como `Brighton & Hove Albion FC`). Resuelve los que sean duplicados; los nuevos de verdad puedes dejarlos.
+6. Pulsa **Regenerar todas (forzar)** para que las predicciones usen el historial completo, o `generate-predictions` para los partidos de los próximos 10 días.
+7. Vuelve al dashboard: el banner cambia a "live" y verás los partidos de hoy o, si no hay, la próxima jornada.
 
-> **Por qué no se ven partidos de hoy de verdad**: el plan gratuito de API-Football no expone la temporada en curso ni consultas por fecha fuera de una ventana de ~3 días. Por eso el dashboard muestra la jornada más reciente que tenemos cuando no hay partidos reales en la fecha actual. Esto está documentado en [03-datos-e-ingesta](./03-datos-e-ingesta.md#limitaciones-del-plan-gratuito).
+> Sin `FOOTBALL_DATA_KEY` solo tendrás historial: el dashboard mostrará la jornada más reciente de 2024/25. Ver [03-datos-e-ingesta](./03-datos-e-ingesta.md#limitaciones-del-plan-gratuito).
 
 ## Comandos de referencia
 

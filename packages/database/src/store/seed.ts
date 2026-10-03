@@ -264,6 +264,16 @@ export function createSeedData(): SeedData {
       lastFailureAt: null,
       consecutiveFailures: 0,
     },
+    {
+      id: asDataSourceId('source-football-data'),
+      name: 'football-data.org',
+      kind: 'api',
+      active: false,
+      health: 'disabled',
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      consecutiveFailures: 0,
+    },
   ];
 
   const unresolved: UnresolvedEntity[] = [

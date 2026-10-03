@@ -39,41 +39,66 @@ Descubiertas empíricamente y codificadas en el adapter:
 - `?date=` solo funciona en una ventana de ~±1 día alrededor de hoy y **sin** `season`.
 - 10 requests/minuto, 100/día. Un `import-season` consume 6 requests.
 
-Consecuencia de producto: no tenemos la temporada en curso. El dashboard muestra la jornada más reciente disponible de cada liga visible (ventana de 3 días, máximo 12 partidos por competición) cuando no hay partidos reales en la fecha actual.
+Consecuencia: API-Football es nuestra fuente de **historial** (2022–2024). La temporada en curso viene de football-data.org.
+
+## football-data.org en detalle
+
+Archivo: `packages/scraping/src/footballData.ts`. Es la fuente de la **temporada en curso** (fixtures programados + resultados).
+
+- Base URL `https://api.football-data.org/v4`, cabecera `X-Auth-Token` (`FOOTBALL_DATA_KEY`).
+- `fetchCompetitionMatches({ code, season? })`: `GET /competitions/{code}/matches`. Sin `season` devuelve la temporada en curso completa (~380 partidos en una liga).
+- `fetchTrackedCompetitions(season?)`: itera las 6 competiciones del catálogo acumulando warnings por competición (un 429 en una liga no tira las demás).
+- `ping()`: pide la PL en curso; se usa en Admin → Probar.
+- Tier gratuito: 10 req/min, ligas "tier one" (incluye nuestras 6). Un `scrape-source` consume 6 requests; no lo encadenes dos veces en el mismo minuto.
+- Estados: `FINISHED` → `finished`; `SCHEDULED`/`TIMED` → `scheduled`; `IN_PLAY`/`PAUSED` → `live`; `POSTPONED`/`SUSPENDED` → `postponed`; `CANCELLED`/`AWARDED` → `cancelled`.
+
+Los equipos vienen con `name`, `shortName` y `tla`. El ingest usa `[name, shortName]` como candidatos para casar con los equipos existentes (API-Football usa nombres cortos: `Arsenal` vs `Arsenal FC`).
 
 ## Catálogo de competiciones
 
 ```ts
-// packages/scraping/src/apiFootball.ts
-API_FOOTBALL_COMPETITIONS = [
-  { leagueId: 2,   competitionId: 'comp-ucl',        role: 'featured' },
-  { leagueId: 39,  competitionId: 'comp-pl',         role: 'featured' },
-  { leagueId: 140, competitionId: 'comp-laliga',     role: 'featured' },
-  { leagueId: 78,  competitionId: 'comp-bundesliga', role: 'support'  },
-  { leagueId: 135, competitionId: 'comp-seriea',     role: 'support'  },
-  { leagueId: 61,  competitionId: 'comp-ligue1',     role: 'support'  },
+// packages/scraping/src/competitions.ts
+TRACKED_COMPETITIONS = [
+  { competitionId: 'comp-ucl',        role: 'featured', apiFootballLeagueId: 2,   footballDataCode: 'CL'  },
+  { competitionId: 'comp-pl',         role: 'featured', apiFootballLeagueId: 39,  footballDataCode: 'PL'  },
+  { competitionId: 'comp-laliga',     role: 'featured', apiFootballLeagueId: 140, footballDataCode: 'PD'  },
+  { competitionId: 'comp-bundesliga', role: 'support',  apiFootballLeagueId: 78,  footballDataCode: 'BL1' },
+  { competitionId: 'comp-seriea',     role: 'support',  apiFootballLeagueId: 135, footballDataCode: 'SA'  },
+  { competitionId: 'comp-ligue1',     role: 'support',  apiFootballLeagueId: 61,  footballDataCode: 'FL1' },
 ]
 ```
 
-`trackedCompetitions()` produce las entidades `Competition` (support → `active: false`). `import-season` las crea si no existen, sin pisar las que ya haya (un admin puede activar/desactivar manualmente).
+Un solo catálogo con una columna por proveedor. `trackedCompetitions()` produce las entidades `Competition` (support → `active: false`); `import-season` y `scrape-source` las crean si no existen, sin pisar las que ya haya (un admin puede activar/desactivar manualmente).
 
-Para añadir una liga: una línea en este array y un `import-season`. Nada más.
+Para añadir una liga: una línea en este array con los ids de ambos proveedores. Nada más.
 
 ## Ingest: de fixture a dominio
 
-Archivo: `packages/scraping/src/ingestFixtures.ts`, función `ingestApiFootballFixtures({ fixtures, teams, competitions, now })`.
+Archivo: `packages/scraping/src/ingestFixtures.ts`. Es **agnóstico de proveedor**: cada adapter se traduce primero a `NormalizedFixture` (`normalizeApiFootballFixture`, `normalizeFootballDataMatch`) y luego `ingestFixtures({ fixtures, teams, competitions, existingMatches, now })` hace el trabajo. `ingestApiFootballFixtures` e `ingestFootballDataMatches` son envoltorios finos.
+
+```ts
+interface NormalizedFixture {
+  provider: 'api-football' | 'football-data';
+  providerMatchId: number;
+  competitionId: string | null;      // ya resuelto contra el catálogo
+  kickoffAt: Date; status: MatchStatus;
+  homeScore: number | null; awayScore: number | null;
+  home: { providerTeamId: number; names: string[] };  // nombre completo primero
+  away: { providerTeamId: number; names: string[] };
+}
+```
 
 Por cada fixture:
 
-1. Busca la competición por `league.id` en `LEAGUE_TO_COMPETITION`. Si no está mapeada → `failed`.
+1. Si `competitionId` es `null` o no existe en la base → `failed`.
 2. Resuelve cada equipo con `resolveTeam`:
-   - Primero busca un equipo que ya tenga el alias `api-football:<id>` (identidad estable aunque el proveedor cambie el nombre).
-   - Si no, intenta `matchTeamByAlias(nombre, equipos)` (exacto o texto normalizado). Si acierta, añade el nombre a los `aliases` del equipo canónico.
-   - Si no, crea un equipo nuevo con id `team-af-<providerId>`, aliases `[nombre, 'api-football:<id>']`, y lo apunta en `unresolvedTeams` (`{ name, teamId }`) para que un admin lo revise (podría ser un duplicado con otro nombre).
-3. Mapea el estado (`FT`/`AET`/`PEN` → `finished`, `NS`/`TBD` → `scheduled`, `PST`/`SUSP` → `postponed`, `CANC`/`ABD`/`AWD`/`WO` → `cancelled`, cualquier otro → `live`) y los goles.
-4. Crea el `Match` con id `match-af-<fixtureId>` y `sourceId = source-api-football`.
+   - Primero busca un equipo que ya tenga el alias `<provider>:<id>` (`api-football:50`, `football-data:65`): identidad estable aunque el proveedor cambie el nombre.
+   - Si no, prueba cada nombre candidato con `matchTeamByAlias`. Si acierta, añade el nombre y el alias de proveedor al equipo canónico.
+   - Si no, crea un equipo nuevo con id `team-af-<id>` / `team-fd-<id>`, aliases `[nombres..., '<provider>:<id>']`, y lo apunta en `unresolvedTeams` (`{ name, teamId }`) para que un admin lo revise.
+3. **Dedupe entre proveedores**: si ya existe un partido con la misma competición, los mismos dos equipos y el mismo día UTC (`existingMatches`), reutiliza su id y `sourceId` y solo actualiza estado y marcador. Así una temporada vista por los dos proveedores no se duplica. Se cuenta en `deduplicated`.
+4. Crea/actualiza el `Match` con id `match-af-<fixtureId>` / `match-fd-<id>` y el `sourceId` del proveedor.
 
-Devuelve `{ teamsToUpsert, matches, unresolvedTeams, processed, failed }`. El worker persiste todo con `upsert`, así que re-importar una temporada es idempotente y actualiza marcadores.
+Devuelve `{ teamsToUpsert, matches, unresolvedTeams, processed, failed, deduplicated }`. El worker persiste todo con `upsert`, así que re-sincronizar es idempotente y actualiza marcadores.
 
 ### Entidades sin resolver y aliases
 
@@ -86,7 +111,13 @@ La respuesta incluye `mergedTeamId` y `movedMatches`. Las predicciones ya genera
 
 Para duplicados que no pasaron por la cola (p. ej. dos `team-af-*` del mismo club), Admin tiene **Fusionar equipos duplicados** (`POST /admin/teams/merge`). Es irreversible: elige bien cuál es origen (se borra) y cuál destino (se conserva).
 
-Hoy el matcher es deliberadamente conservador (exacto/normalizado). No hace fuzzy matching para evitar falsos positivos; preferimos un alias manual a un equipo mal fusionado.
+El matcher (`packages/normalization/src/entityMatcher.ts`) es deliberadamente conservador, en tres pasadas:
+
+1. alias exacto;
+2. texto normalizado (minúsculas, sin acentos, `ø`→`o`, sin puntuación);
+3. nombre de club sin formas legales ni años (`normalizeClubName`: quita `FC`, `AFC`, `SV`, `TSG`, `04`, `1899`…), y **solo si un único equipo** cumple. `Bayer 04 Leverkusen` ≡ `Bayer Leverkusen`; `Manchester FC` no casa con nada porque United y City empatan.
+
+No hace fuzzy matching: `Brighton` vs `Brighton & Hove Albion FC` o `PSV` vs `PSV Eindhoven` quedan pendientes a propósito. Preferimos una fusión manual a un equipo mal casado. Con la primera sincronización de 2026/27 quedaron 23 pendientes: 8 eran variantes de este tipo (resueltas desde Admin) y 15 clubes recién ascendidos que no existían en 2022–24.
 
 ## RAW: retención y propósito
 
@@ -101,11 +132,11 @@ Nombres en `packages/shared/src/jobs.ts`; implementación en `apps/worker/src/pi
 | Job | Qué hace | Estado real |
 |---|---|---|
 | `discover-todays-matches` | Cuenta partidos con fecha de hoy | informativo |
-| `scrape-source` | Pide los fixtures de hoy, guarda RAW, ingiere, actualiza salud de la fuente | funcional; en plan gratuito casi siempre devuelve 0 fixtures MVP |
-| `import-season` | Descarga una temporada completa de las 6 ligas (`data.season` o `API_FOOTBALL_SEASON`), crea competiciones faltantes, guarda RAW, ingiere | **la vía principal de datos reales** |
+| `scrape-source` | Ejecuta cada proveedor configurado. **football-data.org**: sincroniza la temporada en curso de las 6 competiciones (programados + resultados), guarda RAW, ingiere con dedupe, encola equipos nuevos como pendientes. **API-Football**: fixtures de hoy (en plan gratuito casi siempre 0). Cada proveedor registra su propio `scraping_job` | **la vía de la temporada en curso** |
+| `import-season` | Descarga una temporada completa de las 6 ligas desde API-Football (`data.season` o `API_FOOTBALL_SEASON`), crea competiciones faltantes, guarda RAW, ingiere. No encola pendientes (crearía cientos de equipos legítimos) | **la vía del historial 2022–2024** |
 | `normalize-source-data` | — | `skipped`: la normalización ocurre inline durante el ingest |
 | `calculate-features` | — | `skipped`: las features se calculan bajo demanda |
-| `generate-predictions` | Para cada partido `scheduled` sin predicción: ajusta ratings, construye snapshot, predice con el modelo por defecto y guarda | funcional |
+| `generate-predictions` | Para cada partido `scheduled` sin predicción **que empiece en los próximos `PREDICTION_HORIZON_DAYS` (10) días**: construye snapshot, predice con el modelo por defecto y guarda. Los ratings se ajustan una sola vez (todos comparten cutoff = ahora) | funcional |
 | `evaluate-predictions` | Evalúa la última predicción de cada partido terminado | funcional (no persiste aún; el backtest cubre la necesidad) |
 | `cleanup-raw-data` | Borra RAW > 30 días | funcional |
 | `source-health-check` | Cuenta fuentes | informativo |
@@ -125,14 +156,14 @@ No hay scheduler automático todavía (cron). Los jobs se disparan desde Admin o
 
 ## Datos actuales en la base local (referencia)
 
-Tras importar 2022–2024 de las 6 ligas:
+Tras importar 2022–2024 de las 6 ligas (API-Football) y sincronizar 2026/27 (football-data.org):
 
-- ~6 050 partidos reales terminados, 234 equipos.
-- Por competición visible: Premier 1 140, La Liga 1 140, UCL 707.
+- ~6 050 partidos históricos terminados + ~1 900 de la temporada en curso (≈270 jugados al inicio de octubre), 248 equipos.
+- Por competición visible (historial): Premier 1 140, La Liga 1 140, UCL 707.
 - Soporte: Serie A 1 141, Ligue 1 996, Bundesliga 924.
 
-Si tu base tiene menos, ejecuta los `import-season` que falten.
+Si tu base tiene menos, ejecuta los `import-season` que falten y un `scrape-source`.
 
-## Qué fuente sigue
+## Añadir otra fuente
 
-Para tener la temporada en curso, el candidato es football-data.org (tier gratuito con 2025/26 para las mismas 6 ligas, 10 req/min). Implementarlo es: nuevo adapter en `packages/scraping` (Fetcher/Parser), reutilizar `ingestApiFootballFixtures` adaptando el tipo de entrada (o un `ingestFootballDataFixtures` paralelo), nuevo `sourceId`, y que `getDataMode()` lo cuente como `live`. El dominio y el motor no cambian.
+Receta probada con football-data.org: adapter en `packages/scraping` (Fetcher/Parser con `ping()`), función `normalizeXxx` → `NormalizedFixture`, columna nueva en `TRACKED_COMPETITIONS`, `sourceId` nuevo en `shared`, fila en el seed de `data_sources`, entrada en `PINGABLE_PROVIDERS` del controller admin y una rama en `scrapeSources` del worker. El dominio, las features y el motor no cambian; `isLiveSourceId` ya cuenta cualquier fuente distinta del seed como dato real.

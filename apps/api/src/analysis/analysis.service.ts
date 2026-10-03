@@ -27,9 +27,10 @@ import {
   listModelVersions,
   predictionEngine,
 } from '@sports-prediction/prediction';
-import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
+import { isWithinPredictionHorizon } from '@sports-prediction/shared';
 import { STORE } from '../store/store.tokens.js';
 import { summarizeBacktest, type BacktestSample } from './backtest.js';
+import { selectDashboardMatches } from './selectDashboardMatches.js';
 
 function describeUnavailable(
   reason: 'missing_minimum_data' | 'missing_ratings' | 'invalid_cutoff',
@@ -93,61 +94,7 @@ export class AnalysisService {
     const matches = allMatches.filter((match) =>
       featuredCompetitionIds.has(String(match.competitionId)),
     );
-    const today = new Date();
-    const start = new Date(today);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(today);
-    end.setUTCHours(23, 59, 59, 999);
-
-    const isToday = (time: number): boolean =>
-      time >= start.getTime() && time <= end.getTime();
-
-    const realMatches = matches.filter(
-      (match) => String(match.sourceId) === API_FOOTBALL_SOURCE_ID,
-    );
-
-    let selected: readonly typeof matches[number][];
-    if (realMatches.length > 0) {
-      // Real data wins over seed. Show today's real fixtures, otherwise the
-      // most recent real matchday available (free plans expose past seasons).
-      const todaysReal = realMatches.filter((match) =>
-        isToday(match.scheduledAt.getTime()),
-      );
-      if (todaysReal.length > 0) {
-        selected = todaysReal;
-      } else {
-        // Pick the latest matchday per competition so every MVP league shows up.
-        const byCompetition = new Map<string, typeof matches[number][]>();
-        for (const match of realMatches) {
-          const list = byCompetition.get(match.competitionId) ?? [];
-          list.push(match);
-          byCompetition.set(match.competitionId, list);
-        }
-
-        const picked: typeof matches[number][] = [];
-        for (const list of byCompetition.values()) {
-          const sortedDesc = [...list].sort(
-            (a, b) => b.scheduledAt.getTime() - a.scheduledAt.getTime(),
-          );
-          const newest = sortedDesc[0];
-          if (!newest) continue;
-          const dayStart = new Date(newest.scheduledAt);
-          dayStart.setUTCHours(0, 0, 0, 0);
-          const windowStart = dayStart.getTime() - 3 * 24 * 60 * 60 * 1000;
-          picked.push(
-            ...sortedDesc
-              .filter((match) => match.scheduledAt.getTime() >= windowStart)
-              .slice(0, 12),
-          );
-        }
-
-        selected = picked.sort(
-          (a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime(),
-        );
-      }
-    } else {
-      selected = matches.filter((match) => isToday(match.scheduledAt.getTime()));
-    }
+    const selected = selectDashboardMatches(matches);
 
     const cards: MatchCard[] = [];
     for (const match of selected) {
@@ -259,7 +206,11 @@ export class AnalysisService {
 
   async generateAllPredictions(): Promise<number> {
     const matches = await this.store.listMatches();
-    const upcoming = matches.filter((match) => match.status === 'scheduled');
+    const upcoming = matches.filter(
+      (match) =>
+        match.status === 'scheduled' &&
+        isWithinPredictionHorizon(match.scheduledAt),
+    );
     let count = 0;
     for (const match of upcoming) {
       await this.getAnalysis(match.id);

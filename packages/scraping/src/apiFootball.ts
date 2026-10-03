@@ -1,6 +1,7 @@
 import { asDataSourceId } from '@sports-prediction/domain';
 import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
 import { checksumPayload } from './checksum.js';
+import { TRACKED_COMPETITIONS } from './competitions.js';
 import type { RawScrape, SourceAdapter } from './types.js';
 
 export const API_FOOTBALL_BASE_URL = 'https://v3.football.api-sports.io';
@@ -18,38 +19,16 @@ export const API_FOOTBALL_LEAGUES = {
   ligue1: 61,
 } as const;
 
-export interface TrackedCompetition {
-  readonly leagueId: number;
-  readonly competitionId: string;
-  readonly name: string;
-  readonly country: string | null;
-  /**
-   * `featured` competitions are shown to end users (MVP scope).
-   * `support` competitions are ingested only so that opponents met in European
-   * cups carry opponent-adjusted ratings from their domestic results.
-   */
-  readonly role: 'featured' | 'support';
-}
-
-export const API_FOOTBALL_COMPETITIONS: readonly TrackedCompetition[] = [
-  { leagueId: API_FOOTBALL_LEAGUES.ucl, competitionId: 'comp-ucl', name: 'UEFA Champions League', country: null, role: 'featured' },
-  { leagueId: API_FOOTBALL_LEAGUES.premierLeague, competitionId: 'comp-pl', name: 'Premier League', country: 'England', role: 'featured' },
-  { leagueId: API_FOOTBALL_LEAGUES.laLiga, competitionId: 'comp-laliga', name: 'La Liga', country: 'Spain', role: 'featured' },
-  { leagueId: API_FOOTBALL_LEAGUES.bundesliga, competitionId: 'comp-bundesliga', name: 'Bundesliga', country: 'Germany', role: 'support' },
-  { leagueId: API_FOOTBALL_LEAGUES.serieA, competitionId: 'comp-seriea', name: 'Serie A', country: 'Italy', role: 'support' },
-  { leagueId: API_FOOTBALL_LEAGUES.ligue1, competitionId: 'comp-ligue1', name: 'Ligue 1', country: 'France', role: 'support' },
-];
-
 /** Leagues surfaced in the product (dashboard, daily scrape filter). */
 export const MVP_LEAGUE_IDS: ReadonlySet<number> = new Set(
-  API_FOOTBALL_COMPETITIONS.filter((item) => item.role === 'featured').map(
-    (item) => item.leagueId,
+  TRACKED_COMPETITIONS.filter((item) => item.role === 'featured').map(
+    (item) => item.apiFootballLeagueId,
   ),
 );
 
 /** Every league ingested for modelling, featured or support. */
 export const TRACKED_LEAGUE_IDS: ReadonlySet<number> = new Set(
-  API_FOOTBALL_COMPETITIONS.map((item) => item.leagueId),
+  TRACKED_COMPETITIONS.map((item) => item.apiFootballLeagueId),
 );
 
 export type ApiFootballFetch = (

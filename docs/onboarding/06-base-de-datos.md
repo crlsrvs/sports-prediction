@@ -30,7 +30,7 @@ Ids son texto legible: `sport-football`, `comp-pl`, `team-af-50`, `team-barcelon
 
 Un partido puede tener **muchas** predicciones (una por generación/modelo). `getLatestPrediction(matchId)` devuelve la más reciente por `generated_at`. Nunca borramos predicciones: reproducibilidad.
 
-Ids de partido: `match-af-<fixtureId>` (API-Football), `hist-*` / `match-*` (seed).
+Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football-data.org), `hist-*` / `match-*` (seed). Un partido visto por los dos proveedores conserva el id y `source_id` del primero que lo creó.
 
 ### Operación e ingesta
 

@@ -1,7 +1,11 @@
-import { createAppStore, type AppStore } from '@sports-prediction/database';
 import {
-  asDataSourceId,
+  createAppStore,
+  type AppStore,
+  type DataSourceRecord,
+} from '@sports-prediction/database';
+import {
   asPredictionId,
+  type DataSourceId,
   type MatchContext,
 } from '@sports-prediction/domain';
 import {
@@ -15,13 +19,18 @@ import {
 } from '@sports-prediction/prediction';
 import {
   createApiFootballAdapterFromEnv,
+  createFootballDataAdapterFromEnv,
   ingestApiFootballFixtures,
+  ingestFootballDataMatches,
   resolveApiFootballSeason,
   trackedCompetitions,
+  type FootballDataAdapter,
+  type IngestFixturesResult,
 } from '@sports-prediction/scraping';
 
 import {
   API_FOOTBALL_SOURCE_ID,
+  isWithinPredictionHorizon,
   MAX_RAW_RETENTION_DAYS,
   SEED_SOURCE_ID,
 } from '@sports-prediction/shared';
@@ -41,7 +50,7 @@ export async function runPipelineJob(
       return { ok: true, detail: `discovered:${todayCount}` };
     }
     case JOB_NAMES.SCRAPE_SOURCE:
-      return scrapeSource(store);
+      return scrapeSources(store);
     case JOB_NAMES.IMPORT_SEASON:
       return importSeason(store, parseSeason(data['season']));
     case JOB_NAMES.NORMALIZE_SOURCE_DATA:
@@ -75,7 +84,171 @@ export async function runPipelineJob(
   }
 }
 
-async function scrapeSource(
+/**
+ * Runs every configured provider. football-data.org syncs the season in
+ * progress (fixtures + results); API-Football adds today's fixtures when a key
+ * is present. Each provider records its own scraping job.
+ */
+async function scrapeSources(
+  store: AppStore,
+): Promise<{ readonly ok: true; readonly detail: string }> {
+  const details: string[] = [];
+  const footballData = createFootballDataAdapterFromEnv();
+  if (footballData) {
+    const result = await syncFootballData(store, footballData);
+    details.push(`football-data:${result.detail}`);
+  }
+  const apiFootball = await scrapeApiFootball(store);
+  details.push(`api-football:${apiFootball.detail}`);
+  return { ok: true, detail: details.join(' ; ') };
+}
+
+async function ensureTrackedCompetitions(store: AppStore): Promise<void> {
+  // Support leagues are created inactive; admin-managed flags on existing
+  // competitions are never overridden.
+  const existing = await store.listCompetitions();
+  const existingIds = new Set(existing.map((item) => String(item.id)));
+  for (const competition of trackedCompetitions()) {
+    if (!existingIds.has(String(competition.id))) {
+      await store.upsertCompetition(competition);
+    }
+  }
+}
+
+async function ensureSource(
+  store: AppStore,
+  adapter: { readonly id: DataSourceId; readonly name: string },
+): Promise<DataSourceRecord> {
+  const sources = await store.listSources();
+  const found = sources.find((item) => String(item.id) === String(adapter.id));
+  if (found) return found;
+  return store.upsertSource({
+    id: adapter.id,
+    name: adapter.name,
+    kind: 'api',
+    active: true,
+    health: 'warning',
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    consecutiveFailures: 0,
+  });
+}
+
+async function persistIngest(
+  store: AppStore,
+  ingested: IngestFixturesResult,
+  sourceId: DataSourceId,
+  now: Date,
+): Promise<void> {
+  for (const team of ingested.teamsToUpsert) {
+    await store.upsertTeam(team);
+  }
+  for (const match of ingested.matches) {
+    await store.upsertMatch(match);
+  }
+  const pending = await store.listUnresolvedEntities();
+  const pendingNames = new Set(pending.map((item) => item.incomingName));
+  for (const unresolved of ingested.unresolvedTeams) {
+    if (pendingNames.has(unresolved.name)) continue;
+    await store.addUnresolvedEntity({
+      id: `unresolved-${crypto.randomUUID()}`,
+      incomingName: unresolved.name,
+      sourceId,
+      createdAt: now,
+      provisionalTeamId: unresolved.teamId,
+    });
+  }
+}
+
+async function syncFootballData(
+  store: AppStore,
+  adapter: FootballDataAdapter,
+): Promise<{ readonly detail: string }> {
+  const source = await ensureSource(store, adapter);
+  const startedAt = new Date();
+  try {
+    await ensureTrackedCompetitions(store);
+    const { raw, matches, warnings } = await adapter.fetchTrackedCompetitions();
+
+    for (const scrape of raw) {
+      await store.saveRawRecord({
+        id: `raw-${crypto.randomUUID()}`,
+        sourceId: scrape.sourceId,
+        url: scrape.url,
+        fetchedAt: scrape.fetchedAt,
+        statusCode: scrape.statusCode,
+        contentType: scrape.contentType,
+        payload: scrape.payload,
+        checksum: scrape.checksum,
+        metadata: scrape.metadata,
+      });
+    }
+
+    const [teams, competitions, existingMatches] = await Promise.all([
+      store.listTeams(),
+      store.listCompetitions(),
+      store.listMatches(),
+    ]);
+    const ingested = ingestFootballDataMatches({
+      matches,
+      teams,
+      competitions,
+      existingMatches,
+      now: startedAt,
+    });
+    await persistIngest(store, ingested, source.id, startedAt);
+
+    const warningText = warnings.length > 0 ? warnings.join(' | ') : null;
+    await store.addScrapingJob({
+      id: `job-${crypto.randomUUID()}`,
+      sourceId: source.id,
+      startedAt,
+      finishedAt: new Date(),
+      status:
+        ingested.processed === 0 || ingested.failed > 0 || warnings.length > 0
+          ? 'partial'
+          : 'success',
+      recordsFound: matches.length,
+      recordsProcessed: ingested.processed,
+      recordsFailed: ingested.failed,
+      error: warningText,
+    });
+    await store.upsertSource({
+      ...source,
+      active: true,
+      health: warnings.length > 0 ? 'warning' : 'healthy',
+      lastSuccessAt: new Date(),
+      consecutiveFailures: 0,
+    });
+    return {
+      detail: `synced:${ingested.processed}${
+        ingested.deduplicated > 0 ? `:dedup:${ingested.deduplicated}` : ''
+      }${warningText ? `:warnings:${warnings.length}` : ''}`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await store.addScrapingJob({
+      id: `job-${crypto.randomUUID()}`,
+      sourceId: source.id,
+      startedAt,
+      finishedAt: new Date(),
+      status: 'failed',
+      recordsFound: 0,
+      recordsProcessed: 0,
+      recordsFailed: 1,
+      error: message,
+    });
+    await store.upsertSource({
+      ...source,
+      health: 'broken',
+      lastFailureAt: new Date(),
+      consecutiveFailures: source.consecutiveFailures + 1,
+    });
+    return { detail: `failed:${message}` };
+  }
+}
+
+async function scrapeApiFootball(
   store: AppStore,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
   const sources = await store.listSources();
@@ -132,32 +305,19 @@ async function scrapeSource(
       });
     }
 
-    const [teams, competitions] = await Promise.all([
+    const [teams, competitions, existingMatches] = await Promise.all([
       store.listTeams(),
       store.listCompetitions(),
+      store.listMatches(),
     ]);
     const ingested = ingestApiFootballFixtures({
       fixtures,
       teams,
       competitions,
+      existingMatches,
       now: startedAt,
     });
-
-    for (const team of ingested.teamsToUpsert) {
-      await store.upsertTeam(team);
-    }
-    for (const match of ingested.matches) {
-      await store.upsertMatch(match);
-    }
-    for (const pending of ingested.unresolvedTeams) {
-      await store.addUnresolvedEntity({
-        id: `unresolved-${crypto.randomUUID()}`,
-        incomingName: pending.name,
-        sourceId: asDataSourceId(API_FOOTBALL_SOURCE_ID),
-        createdAt: startedAt,
-        provisionalTeamId: pending.teamId,
-      });
-    }
+    await persistIngest(store, ingested, apiSource.id, startedAt);
 
     const warningText = warnings.length > 0 ? warnings.join(' | ') : null;
     await store.addScrapingJob({
@@ -236,16 +396,7 @@ async function importSeason(
   const startedAt = new Date();
   const season = requestedSeason ?? resolveApiFootballSeason(startedAt);
   try {
-    // Make sure every tracked competition exists (support leagues are created
-    // inactive) without overriding admin-managed flags on existing ones.
-    const existingCompetitions = await store.listCompetitions();
-    const existingIds = new Set(existingCompetitions.map((item) => String(item.id)));
-    for (const competition of trackedCompetitions()) {
-      if (!existingIds.has(String(competition.id))) {
-        await store.upsertCompetition(competition);
-      }
-    }
-
+    await ensureTrackedCompetitions(store);
     const { raw, fixtures, warnings } = await adapter.fetchMvpSeason(season);
 
     for (const scrape of raw) {
@@ -262,17 +413,20 @@ async function importSeason(
       });
     }
 
-    const [teams, competitions] = await Promise.all([
+    const [teams, competitions, existingMatches] = await Promise.all([
       store.listTeams(),
       store.listCompetitions(),
+      store.listMatches(),
     ]);
     const ingested = ingestApiFootballFixtures({
       fixtures,
       teams,
       competitions,
+      existingMatches,
       now: startedAt,
     });
-
+    // Historical imports create many legitimate provider teams; they are not
+    // queued as unresolved to keep the admin list meaningful.
     for (const team of ingested.teamsToUpsert) {
       await store.upsertTeam(team);
     }
@@ -329,9 +483,16 @@ async function generatePredictions(
   store: AppStore,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
   const matches = await store.listMatches();
-  const scheduled = matches.filter((match) => match.status === 'scheduled');
+  const now = new Date();
+  const scheduled = matches.filter(
+    (match) =>
+      match.status === 'scheduled' &&
+      isWithinPredictionHorizon(match.scheduledAt, now),
+  );
   const competitions = await store.listCompetitions();
   const history = buildFinishedHistory(matches);
+  // Every upcoming fixture shares the same cutoff (now), so one fit serves all.
+  const ratingsNow = fitDixonColes({ history, cutoffAt: now });
 
   let generated = 0;
   for (const match of scheduled) {
@@ -346,9 +507,12 @@ async function generatePredictions(
     if (!homeTeam || !awayTeam || !competition) continue;
 
     const dataCutoffAt = new Date(
-      Math.min(Date.now(), match.scheduledAt.getTime() - 5 * 60 * 1000),
+      Math.min(now.getTime(), match.scheduledAt.getTime() - 5 * 60 * 1000),
     );
-    const ratings = fitDixonColes({ history, cutoffAt: dataCutoffAt });
+    const ratings =
+      dataCutoffAt.getTime() === now.getTime()
+        ? ratingsNow
+        : fitDixonColes({ history, cutoffAt: dataCutoffAt });
 
     const featureSnapshot = buildFeatureSnapshot({
       matchId: match.id,

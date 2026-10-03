@@ -21,7 +21,7 @@ import {
 import type { DbPool } from '../client.js';
 import { createSeedData } from './seed.js';
 import { mergeAliases } from './memoryStore.js';
-import { API_FOOTBALL_SOURCE_ID } from '@sports-prediction/shared';
+import { SEED_SOURCE_ID } from '@sports-prediction/shared';
 import type {
   AppStore,
   BacktestRunRecord,
@@ -682,8 +682,8 @@ export class PostgresStore implements AppStore {
 
   async getDataMode(): Promise<DataMode> {
     const result = await this.pool.query<{ count: string }>(
-      'SELECT COUNT(*)::text AS count FROM matches WHERE source_id = $1',
-      [API_FOOTBALL_SOURCE_ID],
+      'SELECT COUNT(*)::text AS count FROM matches WHERE source_id <> $1',
+      [SEED_SOURCE_ID],
     );
     return Number(result.rows[0]?.count ?? 0) > 0 ? 'live' : 'seed';
   }

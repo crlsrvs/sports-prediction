@@ -23,10 +23,13 @@
 
 #### Lógica de `GET /matches/today`
 
-1. Filtra partidos de competiciones *featured*.
-2. Si hay partidos reales (API-Football) **hoy** (UTC), devuelve esos.
-3. Si hay datos reales pero ninguno hoy, devuelve la **última jornada por competición**: para cada liga, los partidos dentro de los 3 días anteriores al partido más reciente, máximo 12.
-4. Si no hay datos reales, devuelve los partidos seed de hoy.
+Función pura `selectDashboardMatches(matches, now)` (`apps/api/src/analysis/selectDashboardMatches.ts`, con spec):
+
+1. Filtra partidos de competiciones *featured* (en el servicio).
+2. Si hay partidos reales (cualquier fuente distinta del seed) **hoy** (UTC), devuelve esos.
+3. Si no, la **próxima jornada**: desde el día del siguiente kickoff programado, 4 días de ventana, máximo 12 por competición.
+4. Si no hay nada programado (solo historial), la **última jornada por competición**: 3 días antes del partido más reciente, máximo 12.
+5. Si no hay datos reales, los partidos seed de hoy.
 
 Cada `MatchCard` lleva equipos, competición, forma reciente y la última predicción (o `null`).
 
@@ -50,7 +53,7 @@ Nota: la respuesta incluye `prediction.outcomeProbabilities`. La página públic
 | `GET /admin/sources` | | `DataSourceRecord[]` |
 | `POST /admin/sources` | `{ id?, name, kind, active? }` | crea fuente |
 | `PATCH /admin/sources/:id` | `{ active?, health? }` | |
-| `POST /admin/sources/:id/test` | | prueba real: seed cuenta partidos; API-Football hace `ping()`. Registra un `scraping_job` y actualiza `health`. Devuelve `{ source, detail }` con `detail` como `api-football-ok:12`, `skipped:missing-api-football-key`, `api-football-failed:<msg>` |
+| `POST /admin/sources/:id/test` | | prueba real: seed cuenta partidos; API-Football y football-data.org hacen `ping()` (`PINGABLE_PROVIDERS`). Registra un `scraping_job` y actualiza `health`. Devuelve `{ source, detail }` con `detail` como `api-football-ok:12`, `skipped:missing-api-football-key`, `api-football-failed:<msg>` |
 | `GET /admin/scraping/jobs` | | historial de ejecuciones |
 | `POST /admin/jobs` | `{ name, season? }` | encola en BullMQ; 400 si el nombre no es un `JobName` o la temporada es inválida; 400 si Redis no responde |
 | `GET /admin/entities/unresolved` | | equipos creados por ingest sin alias previo (con `provisionalTeamId`) |

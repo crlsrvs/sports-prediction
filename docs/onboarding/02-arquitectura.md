@@ -8,8 +8,8 @@ Ingerimos resultados de fuentes externas, los normalizamos a un modelo de domini
 
 ```text
  Fuentes externas          Ingesta / Scraping           RAW (temporal)
- (API-Football hoy;   ──►  Fetcher → Parser → Ingest ──►  raw_records
-  Playwright después)                                     (7–30 días)
+ (API-Football,       ──►  Fetcher → Parser → Ingest ──►  raw_records
+  football-data.org)                                      (7–30 días)
                                  │
                                  ▼
                            Normalización
@@ -100,7 +100,7 @@ Reglas: `domain` y `shared` no dependen de nadie. `features`, `prediction`, `nor
 ### `packages/shared`
 
 - `Result<T, E>` con `ok()`/`err()`: los motores no lanzan excepciones, devuelven `Result`.
-- `JOB_NAMES`, `DEFAULT_QUEUE_NAME`, `API_FOOTBALL_SOURCE_ID`, `SEED_SOURCE_ID`, `MAX_RAW_RETENTION_DAYS`.
+- `JOB_NAMES`, `DEFAULT_QUEUE_NAME`, `API_FOOTBALL_SOURCE_ID`, `FOOTBALL_DATA_SOURCE_ID`, `SEED_SOURCE_ID`, `isLiveSourceId`, `MAX_RAW_RETENTION_DAYS`, `PREDICTION_HORIZON_DAYS` / `isWithinPredictionHorizon`.
 - `dixonColesTau`: la corrección de marcadores bajos, compartida entre `features` (ajuste) y `prediction` (distribución).
 
 ### `packages/features`
@@ -118,12 +118,15 @@ Reglas: `domain` y `shared` no dependen de nadie. `features`, `prediction`, `nor
 
 ### `packages/scraping`
 
-- `apiFootball.ts`: `ApiFootballAdapter` (fetch con cabecera `x-apisports-key`, RAW con checksum), catálogo `API_FOOTBALL_COMPETITIONS` (ligas *featured* y *support*), helpers de temporada.
-- `ingestFixtures.ts`: convierte fixtures del proveedor en `Team`/`Match` del dominio, resolviendo nombres por alias y creando ids `team-af-<id>` / `match-af-<id>`.
+- `competitions.ts`: `TRACKED_COMPETITIONS`, catálogo único con el id de cada proveedor por competición y su `role` (*featured* / *support*).
+- `apiFootball.ts`: `ApiFootballAdapter` (historial 2022–2024; cabecera `x-apisports-key`, RAW con checksum), helpers de temporada.
+- `footballData.ts`: `FootballDataAdapter` (temporada en curso; cabecera `X-Auth-Token`), `mapFootballDataStatus`.
+- `ingestFixtures.ts`: `ingestFixtures` agnóstico de proveedor sobre `NormalizedFixture`; resuelve equipos por alias de proveedor → nombre → creación provisional, y deduplica partidos ya conocidos por otro proveedor. `normalizeApiFootballFixture` / `normalizeFootballDataMatch` traducen cada proveedor.
 
 ### `packages/normalization`
 
-- `matchTeamByAlias(name, teams)`: coincidencia exacta o por texto normalizado (minúsculas, sin acentos ni puntuación). Devuelve `confidence` y `reason`.
+- `matchTeamByAlias(name, teams)`: tres pasadas (alias exacto → texto normalizado → nombre de club sin formas legales ni años, solo si es único). Devuelve `confidence` y `reason`.
+- `normalizeEntityText`, `normalizeClubName`.
 
 ### `packages/database`
 
@@ -175,7 +178,7 @@ Interfaz con ~30 métodos agrupados por entidad (`listMatches`, `upsertMatch`, `
 
 ## Modos de datos: `seed` vs `live`
 
-`store.getDataMode()` devuelve `live` si existe al menos un partido con `sourceId = source-api-football`; si no, `seed`. La UI muestra un banner distinto en cada caso y `buildFinishedHistory` descarta los resultados seed en modo `live` para que no contaminen los ratings.
+`store.getDataMode()` devuelve `live` si existe al menos un partido de una fuente real (`isLiveSourceId`: cualquier `sourceId` distinto de `source-seed`); si no, `seed`. La UI muestra un banner distinto en cada caso y `buildFinishedHistory` descarta los resultados seed en modo `live` para que no contaminen los ratings.
 
 ## Competiciones *featured* y *support*
 
@@ -184,11 +187,12 @@ Interfaz con ~30 métodos agrupados por entidad (`listMatches`, `upsertMatch`, `
 - **featured** (`active: true`): UCL, Premier, La Liga. Aparecen en `/competitions`, dashboard, backtests y regeneración.
 - **support** (`active: false`): Bundesliga, Serie A, Ligue 1. Sus partidos entran en el historial para que los rivales europeos tengan ratings con base doméstica, pero no se muestran ni se evalúan.
 
-Esta distinción se decide en `API_FOOTBALL_COMPETITIONS` (`packages/scraping/src/apiFootball.ts`) y se materializa al importar temporadas.
+Esta distinción se decide en `TRACKED_COMPETITIONS` (`packages/scraping/src/competitions.ts`) y se materializa al importar o sincronizar temporadas.
 
 ## Decisiones registradas (ADR)
 
 - [0001](../adr/0001-monorepo-and-stack.md): monorepo npm workspaces y stack (React/Vite, NestJS, BullMQ, Postgres, CSS Modules, sin LLM).
 - [0002](../adr/0002-persistence-and-routing.md): driver `pg` con migraciones SQL, store en memoria como fallback, `react-router`.
+- [0003](../adr/0003-second-data-provider.md): football-data.org como proveedor de la temporada en curso; ingest agnóstico de proveedor y dedupe entre fuentes.
 
 Si vas a introducir una librería, un almacén o cambiar una frontera entre paquetes, escribe un ADR nuevo con el mismo formato (Status / Context / Decision / Consequences) antes del código.

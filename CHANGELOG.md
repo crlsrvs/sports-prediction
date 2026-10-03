@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   independent Poisson score distribution, most-probable score consistent with the
   implied winner, 1X2 probabilities and confidence calibrated from the distribution.
 - Model registry (`getPredictionEngine`, `listModelVersions`, `DEFAULT_MODEL_VERSION`).
+- football-data.org adapter for the season in progress (fixtures + results) run by
+  `scrape-source`; provider-agnostic `ingestFixtures` over `NormalizedFixture` with
+  cross-provider match deduplication; single `TRACKED_COMPETITIONS` catalogue;
+  `FOOTBALL_DATA_KEY`. Dashboard shows today's fixtures or the next matchday;
+  batch prediction limited to a 10-day horizon. ADR 0003.
+- Entity matcher third pass: club name without legal forms/years, unique matches only;
+  nordic transliteration (`ø` → `o`).
 - Team merge: resolving a pending entity now merges the provisional `team-af-*` team
   into the chosen one (matches re-pointed, aliases combined); `POST /admin/teams/merge`
   and an Admin form for arbitrary duplicates. Ingest matches by `api-football:<id>`

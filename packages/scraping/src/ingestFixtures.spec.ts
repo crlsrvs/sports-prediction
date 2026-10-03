@@ -7,7 +7,11 @@ import {
   type Team,
 } from '@sports-prediction/domain';
 import type { ApiFootballFixtureItem } from './apiFootball.js';
-import { ingestApiFootballFixtures } from './ingestFixtures.js';
+import type { FootballDataMatch } from './footballData.js';
+import {
+  ingestApiFootballFixtures,
+  ingestFootballDataMatches,
+} from './ingestFixtures.js';
 
 const sportId = asSportId('sport-football');
 
@@ -122,5 +126,85 @@ describe('ingestApiFootballFixtures', () => {
     // Assert
     expect(result.processed).toBe(0);
     expect(result.failed).toBe(1);
+  });
+});
+
+describe('ingestFootballDataMatches', () => {
+  const fdMatch: FootballDataMatch = {
+    id: 560542,
+    utcDate: '2026-10-02T19:00:00Z',
+    status: 'TIMED',
+    competition: { id: 2021, code: 'PL', name: 'Premier League' },
+    season: { id: 2502, startDate: '2026-08-21', endDate: '2027-05-30' },
+    homeTeam: { id: 64, name: 'Liverpool FC', shortName: 'Liverpool', tla: 'LIV' },
+    awayTeam: { id: 65, name: 'Manchester City FC', shortName: 'Man City', tla: 'MCI' },
+    score: { winner: null, fullTime: { home: null, away: null } },
+  };
+
+  it('resolves teams via short names and tags them with the provider alias', () => {
+    // Arrange
+    const manCity: Team = {
+      id: asTeamId('team-man-city'),
+      sportId,
+      canonicalName: 'Manchester City',
+      aliases: ['Man City'],
+    };
+
+    // Act
+    const result = ingestFootballDataMatches({
+      matches: [fdMatch],
+      teams: [...teams, manCity],
+      competitions,
+    });
+
+    // Assert
+    const match = result.matches[0];
+    expect(String(match?.id)).toBe('match-fd-560542');
+    expect(String(match?.sourceId)).toBe('source-football-data');
+    expect(match?.homeTeamId).toBe('team-liverpool');
+    expect(match?.awayTeamId).toBe('team-man-city');
+    expect(match?.homeScore).toBeNull();
+    const liverpool = result.teamsToUpsert.find((team) => team.id === 'team-liverpool');
+    expect(liverpool?.aliases).toEqual(
+      expect.arrayContaining(['Liverpool FC', 'football-data:64']),
+    );
+    expect(result.unresolvedTeams).toHaveLength(0);
+  });
+
+  it('updates a match already imported from another provider instead of duplicating it', () => {
+    // Arrange
+    const existing = ingestApiFootballFixtures({
+      fixtures: [
+        fixture({
+          fixture: { id: 1001, date: '2026-10-02T19:00:00+00:00', status: { short: 'NS' } },
+        }),
+      ],
+      teams,
+      competitions,
+    });
+    const knownTeams = [...teams, ...existing.teamsToUpsert.filter((t) => t.id !== 'team-liverpool')];
+    const finished: FootballDataMatch = {
+      ...fdMatch,
+      status: 'FINISHED',
+      awayTeam: { id: 65, name: 'Manchester City', shortName: 'Man City', tla: 'MCI' },
+      score: { winner: 'AWAY_TEAM', fullTime: { home: 1, away: 2 } },
+    };
+
+    // Act
+    const result = ingestFootballDataMatches({
+      matches: [finished],
+      teams: knownTeams,
+      competitions,
+      existingMatches: existing.matches,
+    });
+
+    // Assert
+    expect(result.deduplicated).toBe(1);
+    const match = result.matches[0];
+    expect(String(match?.id)).toBe('match-af-1001');
+    expect(String(match?.sourceId)).toBe('source-api-football');
+    expect(match?.status).toBe('finished');
+    expect(match?.homeScore).toBe(1);
+    expect(match?.awayScore).toBe(2);
   });
 });
