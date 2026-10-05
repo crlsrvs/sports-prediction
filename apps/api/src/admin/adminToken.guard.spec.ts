@@ -1,20 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { ExecutionContext } from '@nestjs/common';
-import { ADMIN_TOKEN_HEADER, AdminTokenGuard } from './adminToken.guard.js';
+import { createAdminSessionToken } from './adminSession.js';
+import { ADMIN_TOKEN_HEADER, authorizeAdmin } from './adminToken.guard.js';
 
-function contextWithHeaders(headers: Record<string, string>): ExecutionContext {
-  return {
-    switchToHttp: () => ({ getRequest: () => ({ headers }) }),
-  } as unknown as ExecutionContext;
+function tokenFrom(headers: Record<string, string>): string | undefined {
+  return headers[ADMIN_TOKEN_HEADER];
 }
 
-describe('AdminTokenGuard', () => {
-  it('lets everything through when no token is configured', () => {
-    // Arrange
-    const guard = new AdminTokenGuard('');
-
-    // Act
-    const allowed = guard.canActivate(contextWithHeaders({}));
+describe('authorizeAdmin', () => {
+  it('lets everything through when no secret is configured', () => {
+    // Arrange / Act
+    const allowed = authorizeAdmin(undefined, {});
 
     // Assert
     expect(allowed).toBe(true);
@@ -22,12 +17,10 @@ describe('AdminTokenGuard', () => {
 
   it('accepts requests carrying the configured token', () => {
     // Arrange
-    const guard = new AdminTokenGuard('s3cret');
+    const headers = { [ADMIN_TOKEN_HEADER]: 's3cret' };
 
     // Act
-    const allowed = guard.canActivate(
-      contextWithHeaders({ [ADMIN_TOKEN_HEADER]: 's3cret' }),
-    );
+    const allowed = authorizeAdmin(tokenFrom(headers), { ADMIN_TOKEN: 's3cret' });
 
     // Assert
     expect(allowed).toBe(true);
@@ -35,14 +28,21 @@ describe('AdminTokenGuard', () => {
 
   it('rejects missing or wrong tokens with 401', () => {
     // Arrange
-    const guard = new AdminTokenGuard('s3cret');
+    const env = { ADMIN_TOKEN: 's3cret' };
 
     // Act / Assert
-    expect(() => guard.canActivate(contextWithHeaders({}))).toThrowError(
-      /Token de administración/,
-    );
-    expect(() =>
-      guard.canActivate(contextWithHeaders({ [ADMIN_TOKEN_HEADER]: 'nope' })),
-    ).toThrowError(/Token de administración/);
+    expect(() => authorizeAdmin(undefined, env)).toThrowError(/Token de administración/);
+    expect(() => authorizeAdmin('nope', env)).toThrowError(/Token de administración/);
+  });
+
+  it('accepts a session token issued from the password', () => {
+    // Arrange
+    const issued = createAdminSessionToken('secret');
+
+    // Act
+    const allowed = authorizeAdmin(issued.token, { ADMIN_PASSWORD: 'secret' });
+
+    // Assert
+    expect(allowed).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
 ## Estrategia
 
 - PostgreSQL es el sistema de registro. Driver `pg` directo, **sin ORM** (ADR 0002).
-- El esquema se versiona en SQL plano: `packages/database/src/migrations/NNN_nombre.sql`.
+- El esquema se versiona en SQL plano: `packages/database/migrations/NNN_nombre.sql` (fuera de `src/`, para que lo encuentre tanto el código fuente como `dist/`).
 - Las migraciones son idempotentes (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) y se ejecutan **todas, en orden, en cada arranque** de API y worker (`PostgresStore.migrate(pool)`). No hay tabla de control de versiones; la idempotencia es la garantía.
 - `createAppStore()` elige el store: sin `DATABASE_URL` → memoria sembrada (demo explícito); con `DATABASE_URL` alcanzable → Postgres; con `DATABASE_URL` inalcanzable → lanza `StoreConnectionError` (la API no arranca, el job del worker falla) salvo que `STORE_ALLOW_MEMORY_FALLBACK=true`, en cuyo caso cae a memoria avisando. El modo y el motivo se exponen en `GET /health`.
 
@@ -42,7 +42,9 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football
 | `unresolved_entities` | nombres de equipo que el ingest no pudo mapear: `incoming_name`, `source_id`, `created_at`, `provisional_team_id` (FK a `teams`, `ON DELETE SET NULL`). Al resolver, el equipo provisional se fusiona en el elegido, la fila se **borra** y el alias se añade a `teams.aliases` |
 | `entity_aliases` | `alias` → `team_id`, con `source_id` y `created_at`; `UNIQUE (alias, source_id)`. Preparada para registrar aliases por fuente; hoy el store expone `upsertEntityAlias`/`listEntityAliases` pero el ingest todavía resuelve con `teams.aliases` y nadie escribe en esta tabla |
 | `backtest_runs` | `model_version`, `ran_at`, `samples`, `exact_score_rate`, `winner_rate`, `mae_goals`, `brier_score`, `log_loss`, `details` (`JSONB`: `byCompetition`, `baselines`, `calibration`) |
-| `prediction_evaluations` | una fila por predicción evaluada (`prediction_id` PK, cascade al borrar la predicción): `match_id`, `model_version`, `competition_id`, `kickoff_at`, `generated_at`, `generated_before_kickoff`, marcador predicho/real, `predicted_outcome`/`actual_outcome`, `exact_score`, `winner_hit`, `brier_score`, `log_loss`. Índice por `(model_version, kickoff_at desc)` |
+| `prediction_evaluations` | una fila por predicción evaluada (`prediction_id` PK, cascade al borrar la predicción): `match_id`, `model_version`, `competition_id`, `kickoff_at`, `generated_at`, `generated_before_kickoff`, marcador predicho/real, `predicted_outcome`/`actual_outcome`, `exact_score`, `winner_hit`, `brier_score`, `log_loss`, `outcome_probabilities`. Índice por `(model_version, kickoff_at desc)` |
+| `player_absences` | baja conocida: `team_id`, `player_name`, `reason`, `match_day`, `known_at` (la primera vez que la vimos), `source_id` |
+| `team_lineups` | alineación conocida: `team_id`, `match_day`, `known_at`, `player_names`, `source_id` |
 
 ### Migraciones existentes
 
@@ -53,6 +55,7 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football
 | `003_probabilities_and_backtests.sql` | `predictions.outcome_probabilities`, backtest_runs |
 | `004_unresolved_provisional_team.sql` | `unresolved_entities.provisional_team_id`, índices en `matches(home_team_id)` / `matches(away_team_id)` |
 | `005_prediction_evaluations.sql` | tabla `prediction_evaluations` (evaluación persistida de la temporada en vivo) |
+| `006_evaluation_probabilities_and_availability.sql` | `prediction_evaluations.outcome_probabilities`, tablas `player_absences` y `team_lineups` |
 
 ## `AppStore`
 
@@ -77,7 +80,7 @@ Dos implementaciones, y las dos deben estar siempre al día:
 Ejemplo real: añadir `outcome_probabilities` a `predictions` (migración 003).
 
 1. **Dominio**: añade el campo al tipo (`Prediction.outcomeProbabilities`). El typecheck te mostrará cada sitio que construye el objeto.
-2. **Migración**: `006_<nombre>.sql` idempotente. Añádela a la lista `migrationFiles` en `PostgresStore.migrate`.
+2. **Migración**: `007_<nombre>.sql` idempotente. Añádela a la lista `migrationFiles` en `PostgresStore.migrate`.
 3. **PostgresStore**: `INSERT`/`UPDATE` con la columna nueva y el `map*` que la lee (`row['outcome_probabilities']`).
 4. **MemoryStore**: normalmente no hay que tocarlo (guarda el objeto entero), salvo métodos nuevos.
 5. **Seed**: si el tipo es obligatorio, actualiza `seed.ts`.

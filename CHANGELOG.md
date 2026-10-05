@@ -68,6 +68,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guard for `/admin/*` (`x-admin-token`, `VITE_ADMIN_TOKEN`). See ADR 0004 and
   `docs/onboarding/09-ci-y-despliegue.md`.
 
+- Backtest and live evaluation now report ranked probability score (RPS) and a
+  per-season split (July–June). Evaluations store the 1X2 probabilities used
+  for that score (migration 006).
+
+- Availability: API-Football injuries and football-data lineups (when the
+  payload includes them) feed `injuryImpact` / `squadChange`, applied by
+  football-v3 only for facts known before the cutoff. A rejected season is a
+  warning, not invented absences.
+
+- Admin password login (`POST /admin/session`, 12h HMAC session in
+  sessionStorage). `ADMIN_TOKEN` remains for scripts. See ADR 0006.
+
+- Workspace packages compile to `dist/` and the API/worker image runs
+  `node dist/main.js` (~350 MB). `source` export condition keeps dev and tests
+  on TypeScript. See ADR 0005.
+
 ### Fixed
 
 - Demo (seed) results no longer contaminate ratings or backtests once real data exists.

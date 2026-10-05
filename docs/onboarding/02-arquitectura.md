@@ -113,7 +113,7 @@ Reglas: `domain` y `shared` no dependen de nadie. `features`, `prediction`, `nor
 
 - `footballV1.ts`, `footballV2.ts`, `footballV3.ts`: los motores. Todos exponen `predict(matchContext, featureSnapshot): Result<PredictionOutput, PredictionUnavailableReason>`.
 - `poisson.ts`: `poissonPmf`, `buildScoreDistribution(λ, μ, maxGoals, ρ)`, `argmaxOutcome`.
-- `evaluatePrediction.ts`: acierto exacto, acierto de ganador, Brier, log loss.
+- `evaluatePrediction.ts`: acierto exacto, acierto de ganador, Brier, log loss, RPS.
 - `engine.ts`: registro de modelos. `DEFAULT_MODEL_VERSION`, `getPredictionEngine(version)`, `listModelVersions()`, `predictionEngine` (el default).
 
 ### `packages/scraping`
@@ -172,7 +172,7 @@ interface Prediction {
 
 ### `FeatureSnapshot` (lo que entra al motor)
 
-Forma reciente (`homeForm: ['W','D','L',...]`), promedios de goles a favor/en contra, `homeStrength`/`awayStrength`, días de descanso, `injuryImpact*` y `squadChange*` (hoy siempre 0: no tenemos esa fuente), `dataCompleteness` (0–0.95) y `ratings: MatchRatings | null` (Dixon-Coles). Siempre lleva su propio `dataCutoffAt`; el motor rechaza snapshots cuyo corte sea posterior al del contexto (`invalid_cutoff`).
+Forma reciente (`homeForm: ['W','D','L',...]`), promedios de goles a favor/en contra, `homeStrength`/`awayStrength`, días de descanso, `injuryImpact*` y `squadChange*` (bajas y alineación previa conocidas en el corte; 0 si no hay), `dataCompleteness` (0–0.95) y `ratings: MatchRatings | null` (Dixon-Coles). Siempre lleva su propio `dataCutoffAt`; el motor rechaza snapshots cuyo corte sea posterior al del contexto (`invalid_cutoff`).
 
 ### `AppStore`
 

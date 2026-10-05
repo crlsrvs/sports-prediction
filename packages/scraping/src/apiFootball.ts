@@ -111,6 +111,13 @@ export class ApiFootballAdapter implements SourceAdapter {
     };
   }
 
+  buildInjuriesUrl(leagueId: number, season: number): string {
+    const url = new URL(`${this.baseUrl}/injuries`);
+    url.searchParams.set('league', String(leagueId));
+    url.searchParams.set('season', String(season));
+    return url.toString();
+  }
+
   buildFixturesByDateUrl(date: string): string {
     const url = new URL(`${this.baseUrl}/fixtures`);
     url.searchParams.set('date', date);

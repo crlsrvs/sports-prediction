@@ -132,7 +132,7 @@ Nombres en `packages/shared/src/jobs.ts`; implementación en `apps/worker/src/pi
 | Job | Qué hace | Estado real |
 |---|---|---|
 | `discover-todays-matches` | Cuenta partidos con fecha de hoy | informativo |
-| `scrape-source` | Ejecuta cada proveedor configurado. **football-data.org**: sincroniza la temporada en curso de las 6 competiciones (programados + resultados), guarda RAW, ingiere con dedupe, encola equipos nuevos como pendientes. **API-Football**: fixtures de hoy (en plan gratuito casi siempre 0). Cada proveedor registra su propio `scraping_job` | **la vía de la temporada en curso** |
+| `scrape-source` | Ejecuta cada proveedor configurado. **football-data.org**: sincroniza la temporada en curso de las 6 competiciones (programados + resultados), guarda RAW, ingiere con dedupe, encola equipos nuevos como pendientes y, si el payload trae alineación, la guarda. **API-Football**: fixtures de hoy (en plan gratuito casi siempre 0) y, al final, bajas de la temporada en curso (una petición por liga; si el plan las rechaza, queda un warning y no se inventa nada). Cada proveedor registra su propio `scraping_job` | **la vía de la temporada en curso** |
 | `import-season` | Descarga una temporada completa de las 6 ligas desde API-Football (`data.season` o `API_FOOTBALL_SEASON`), crea competiciones faltantes, guarda RAW, ingiere. No encola pendientes (crearía cientos de equipos legítimos) | **la vía del historial 2022–2024** |
 | `normalize-source-data` | — | `skipped`: la normalización ocurre inline durante el ingest |
 | `calculate-features` | — | `skipped`: las features se calculan bajo demanda |

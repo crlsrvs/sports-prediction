@@ -132,6 +132,26 @@ describe('predictV3 (football-v3, Dixon-Coles)', () => {
     expect(thin?.explanation).toContain('Real Madrid');
   });
 
+  it('lowers home expected goals when absences were known before the cutoff', () => {
+    // Arrange
+    const { context, snapshot } = buildFixture();
+    const depleted: FeatureSnapshot = { ...snapshot, injuryImpactHome: -0.18 };
+
+    // Act
+    const baseline = predictV3(context, snapshot);
+    const result = predictV3(context, depleted);
+
+    // Assert
+    if (!baseline.ok || !result.ok) throw new Error('expected ok');
+    expect(result.value.expectedGoals.home).toBeCloseTo(
+      baseline.value.expectedGoals.home - 0.18,
+      6,
+    );
+    expect(result.value.factors.some((factor) => factor.feature === 'home_availability')).toBe(
+      true,
+    );
+  });
+
   it('is unavailable without fitted ratings', () => {
     // Arrange
     const { context, snapshot } = buildFixture(null);

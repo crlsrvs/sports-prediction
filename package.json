@@ -12,7 +12,7 @@
     "dev:web": "npm run dev --workspace=@sports-prediction/web",
     "dev:api": "npm run dev --workspace=@sports-prediction/api",
     "dev:worker": "npm run dev --workspace=@sports-prediction/worker",
-    "build": "npm run build --workspaces --if-present",
+    "build": "node scripts/build-all.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint \"apps/**/src/**/*.{ts,tsx}\" \"packages/**/src/**/*.{ts,tsx}\"",
     "test": "vitest run",

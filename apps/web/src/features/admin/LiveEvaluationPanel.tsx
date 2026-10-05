@@ -83,6 +83,7 @@ export function LiveEvaluationPanel() {
                 <th>MAE goles</th>
                 <th>Brier</th>
                 <th>Log loss</th>
+                <th>RPS</th>
                 <th>Excluidas (tras el partido)</th>
               </tr>
             </thead>
@@ -94,6 +95,7 @@ export function LiveEvaluationPanel() {
                 <td>{num(data.maeGoals, 2)}</td>
                 <td>{num(data.brierScore)}</td>
                 <td>{num(data.logLoss)}</td>
+                <td>{num(data.rps)}</td>
                 <td>{data.backfilled}</td>
               </tr>
             </tbody>
@@ -105,8 +107,10 @@ export function LiveEvaluationPanel() {
                 winnerRate: data.winnerRate,
                 brierScore: data.brierScore,
                 logLoss: data.logLoss,
+                rps: data.rps,
                 details: {
                   byCompetition: data.byCompetition,
+                  bySeason: data.bySeason,
                   baselines: data.baselines,
                   calibration: data.calibration,
                 },

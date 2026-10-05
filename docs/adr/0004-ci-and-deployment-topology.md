@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. The runtime and admin-gate bullets are updated by [ADR 0005](./0005-compiled-workspace-packages.md) and [ADR 0006](./0006-admin-session.md).
 
 ## Context
 

@@ -1,5 +1,5 @@
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { AdminPage } from '../features/admin/AdminPage.js';
+import { AdminGate } from '../features/admin/AdminGate.js';
 import { MatchAnalysisPage } from '../features/analysis/MatchAnalysisPage.js';
 import { TodayDashboard } from '../features/today/TodayDashboard.js';
 import styles from './App.module.css';
@@ -56,7 +56,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<TodayDashboard />} />
           <Route path="/matches/:id" element={<MatchAnalysisPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin" element={<AdminGate />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

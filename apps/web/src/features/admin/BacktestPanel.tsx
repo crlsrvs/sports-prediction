@@ -81,6 +81,7 @@ export function BacktestPanel() {
               <th>MAE goles</th>
               <th>Brier</th>
               <th>Log loss</th>
+              <th>RPS</th>
             </tr>
           </thead>
           <tbody>
@@ -93,6 +94,7 @@ export function BacktestPanel() {
                 <td>{num(run.maeGoals, 2)}</td>
                 <td>{num(run.brierScore)}</td>
                 <td>{num(run.logLoss)}</td>
+                <td>{num(run.details.rps)}</td>
               </tr>
             ))}
           </tbody>
@@ -100,7 +102,16 @@ export function BacktestPanel() {
       ) : null}
 
       {current ? (
-        <MetricsTables summary={current} />
+        <MetricsTables
+          summary={{
+            modelVersion: current.modelVersion,
+            winnerRate: current.winnerRate,
+            brierScore: current.brierScore,
+            logLoss: current.logLoss,
+            rps: current.details.rps,
+            details: current.details,
+          }}
+        />
       ) : (
         <p className={styles.hint}>Aún no hay backtests guardados.</p>
       )}

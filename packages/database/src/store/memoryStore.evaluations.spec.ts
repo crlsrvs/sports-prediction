@@ -26,6 +26,7 @@ function record(
     winnerHit: false,
     brierScore: 0.6,
     logLoss: 1.1,
+    outcomeProbabilities: { home: 0.5, draw: 0.3, away: 0.2 },
     ...overrides,
   };
 }

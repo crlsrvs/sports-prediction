@@ -20,6 +20,11 @@ const MAX_EXPECTED = 4.0;
 /** Below this many prior matches a team's rating is flagged as thin evidence. */
 const THIN_HISTORY_MATCHES = 6;
 
+/** Same weights as v1/v2: injury impact is already in goals; squad change is a share. */
+function availabilityPenalty(injuryImpact: number, squadChange: number): number {
+  return injuryImpact + squadChange * 0.05;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -46,7 +51,7 @@ function buildFactors(
   ratings: MatchRatings,
   distribution: ScoreDistribution,
 ): PredictionFactor[] {
-  const { homeTeam, awayTeam } = context;
+  const { homeTeam, awayTeam, featureSnapshot } = context;
   const average = ratings.leagueAverageGoals || 1;
   const factors: PredictionFactor[] = [];
 
@@ -115,6 +120,34 @@ function buildFactors(
     });
   }
 
+  for (const side of [
+    {
+      feature: 'home_availability',
+      name: homeTeam.canonicalName,
+      penalty: availabilityPenalty(
+        featureSnapshot.injuryImpactHome,
+        featureSnapshot.squadChangeHome,
+      ),
+    },
+    {
+      feature: 'away_availability',
+      name: awayTeam.canonicalName,
+      penalty: availabilityPenalty(
+        featureSnapshot.injuryImpactAway,
+        featureSnapshot.squadChangeAway,
+      ),
+    },
+  ]) {
+    if (side.penalty >= -0.02) continue;
+    factors.push({
+      feature: side.feature,
+      value: Number(side.penalty.toFixed(3)),
+      impact: Number(Math.abs(side.penalty).toFixed(3)),
+      direction: 'negative',
+      explanation: `${side.name} llega con bajas conocidas antes del partido`,
+    });
+  }
+
   const spread = Math.abs(distribution.outcome.home - distribution.outcome.away);
   if (spread < 0.08) {
     factors.push({
@@ -180,11 +213,17 @@ export function predictV3(
 
   const expectedGoals = {
     home: clamp(
-      ratings.homeAttack * ratings.awayDefense * ratings.homeAdvantage,
+      ratings.homeAttack * ratings.awayDefense * ratings.homeAdvantage +
+        availabilityPenalty(featureSnapshot.injuryImpactHome, featureSnapshot.squadChangeHome),
       MIN_EXPECTED,
       MAX_EXPECTED,
     ),
-    away: clamp(ratings.awayAttack * ratings.homeDefense, MIN_EXPECTED, MAX_EXPECTED),
+    away: clamp(
+      ratings.awayAttack * ratings.homeDefense +
+        availabilityPenalty(featureSnapshot.injuryImpactAway, featureSnapshot.squadChangeAway),
+      MIN_EXPECTED,
+      MAX_EXPECTED,
+    ),
   };
 
   const distribution = buildScoreDistribution(

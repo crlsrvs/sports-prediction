@@ -5,6 +5,7 @@ import type {
   Match,
   MatchId,
   MatchOutcome,
+  OutcomeProbabilities,
   Prediction,
   Sport,
   Team,
@@ -96,6 +97,18 @@ export interface BacktestBaselineMetrics {
   readonly winnerRate: number;
   readonly brierScore: number;
   readonly logLoss: number;
+  readonly rps: number | null;
+}
+
+/** One football season (July–June), e.g. "2024/25". */
+export interface BacktestSeasonMetrics {
+  readonly season: string;
+  readonly samples: number;
+  readonly winnerRate: number;
+  readonly exactScoreRate: number;
+  readonly brierScore: number | null;
+  readonly logLoss: number | null;
+  readonly rps: number | null;
 }
 
 export interface BacktestCalibrationBucket {
@@ -117,7 +130,9 @@ export interface BacktestRunRecord {
   readonly brierScore: number | null;
   readonly logLoss: number | null;
   readonly details: {
+    readonly rps: number | null;
     readonly byCompetition: readonly BacktestCompetitionMetrics[];
+    readonly bySeason: readonly BacktestSeasonMetrics[];
     readonly baselines: readonly BacktestBaselineMetrics[];
     readonly calibration: readonly BacktestCalibrationBucket[];
   };
@@ -149,6 +164,27 @@ export interface PredictionEvaluationRecord {
   readonly winnerHit: boolean;
   readonly brierScore: number | null;
   readonly logLoss: number | null;
+  /** 1X2 probabilities used for RPS. Null on rows evaluated before they were stored. */
+  readonly outcomeProbabilities: OutcomeProbabilities | null;
+}
+
+export interface PlayerAbsenceRecord {
+  readonly id: string;
+  readonly teamId: TeamId;
+  readonly playerName: string;
+  readonly reason: string;
+  readonly matchDay: Date;
+  readonly knownAt: Date;
+  readonly sourceId: DataSourceId;
+}
+
+export interface TeamLineupRecord {
+  readonly id: string;
+  readonly teamId: TeamId;
+  readonly matchDay: Date;
+  readonly knownAt: Date;
+  readonly sourceId: DataSourceId;
+  readonly playerNames: readonly string[];
 }
 
 export interface PredictionEvaluationFilter {
@@ -212,4 +248,14 @@ export interface AppStore {
   listPredictionEvaluations(
     filter?: PredictionEvaluationFilter,
   ): Promise<readonly PredictionEvaluationRecord[]>;
+  /**
+   * Inserts absences. On conflict keeps the earliest `knownAt` so a later
+   * refetch cannot move the moment we first learned about the absence.
+   */
+  upsertPlayerAbsences(
+    records: readonly PlayerAbsenceRecord[],
+  ): Promise<number>;
+  listPlayerAbsences(): Promise<readonly PlayerAbsenceRecord[]>;
+  upsertTeamLineups(records: readonly TeamLineupRecord[]): Promise<number>;
+  listTeamLineups(): Promise<readonly TeamLineupRecord[]>;
 }

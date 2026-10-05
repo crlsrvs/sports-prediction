@@ -15,8 +15,10 @@ import type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  PlayerAbsenceRecord,
   PredictionEvaluationFilter,
   PredictionEvaluationRecord,
+  TeamLineupRecord,
   RawRecord,
   ResolveEntityResult,
   ScrapingJobRecord,
@@ -47,6 +49,8 @@ export class MemoryStore implements AppStore {
   private entityAliases = new Map<string, EntityAliasRecord>();
   private backtestRuns: BacktestRunRecord[] = [];
   private evaluations = new Map<string, PredictionEvaluationRecord>();
+  private absences = new Map<string, PlayerAbsenceRecord>();
+  private lineups = new Map<string, TeamLineupRecord>();
 
   static seeded(): MemoryStore {
     const store = new MemoryStore();
@@ -311,6 +315,34 @@ export class MemoryStore implements AppStore {
     return [...this.evaluations.values()]
       .filter((item) => matchesEvaluationFilter(item, filter))
       .sort((a, b) => b.kickoffAt.getTime() - a.kickoffAt.getTime());
+  }
+
+  async upsertPlayerAbsences(records: readonly PlayerAbsenceRecord[]): Promise<number> {
+    for (const record of records) {
+      const current = this.absences.get(record.id);
+      if (!current || record.knownAt.getTime() < current.knownAt.getTime()) {
+        this.absences.set(record.id, record);
+      }
+    }
+    return records.length;
+  }
+
+  async listPlayerAbsences(): Promise<readonly PlayerAbsenceRecord[]> {
+    return [...this.absences.values()];
+  }
+
+  async upsertTeamLineups(records: readonly TeamLineupRecord[]): Promise<number> {
+    for (const record of records) {
+      const current = this.lineups.get(record.id);
+      if (!current || record.knownAt.getTime() < current.knownAt.getTime()) {
+        this.lineups.set(record.id, record);
+      }
+    }
+    return records.length;
+  }
+
+  async listTeamLineups(): Promise<readonly TeamLineupRecord[]> {
+    return [...this.lineups.values()];
   }
 }
 

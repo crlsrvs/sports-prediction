@@ -14,11 +14,14 @@ import {
   type TeamComparisonMetric,
 } from '@sports-prediction/domain';
 import {
+  availabilityAdjustments,
   buildFeatureSnapshot,
   buildFinishedHistory,
   fitDixonColes,
+  type AbsenceFact,
   type DixonColesFit,
   type FinishedMatchResult,
+  type LineupFact,
 } from '@sports-prediction/features';
 import {
   DEFAULT_MODEL_VERSION,
@@ -154,7 +157,10 @@ export class AnalysisService {
       Math.min(Date.now(), match.scheduledAt.getTime() - 5 * 60 * 1000),
     );
 
-    const history = await this.loadHistory();
+    const [history, availability] = await Promise.all([
+      this.loadHistory(),
+      this.loadAvailability(),
+    ]);
     const ratings = fitDixonColes({ history, cutoffAt: dataCutoffAt });
     const featureSnapshot = buildFeatureSnapshot({
       matchId: match.id,
@@ -164,6 +170,13 @@ export class AnalysisService {
       dataCutoffAt,
       history,
       ratings: ratings.matchRatings(match.homeTeamId, match.awayTeamId),
+      ...availabilityAdjustments({
+        homeTeamId: String(match.homeTeamId),
+        awayTeamId: String(match.awayTeamId),
+        kickoffAt: match.scheduledAt,
+        dataCutoffAt,
+        ...availability,
+      }),
     });
 
     const context: MatchContext = {
@@ -251,11 +264,12 @@ export class AnalysisService {
     readonly regenerated: number;
     readonly modelVersion: string;
   }> {
-    const [matches, teams, competitions, history] = await Promise.all([
+    const [matches, teams, competitions, history, availability] = await Promise.all([
       this.store.listMatches(),
       this.store.listTeams(),
       this.store.listCompetitions(),
       this.loadHistory(),
+      this.loadAvailability(),
     ]);
     const teamsById = new Map(teams.map((team) => [String(team.id), team]));
     const competitionsById = new Map(
@@ -291,6 +305,13 @@ export class AnalysisService {
         ratings: ratingsCache
           .fitFor(dataCutoffAt)
           .matchRatings(match.homeTeamId, match.awayTeamId),
+        ...availabilityAdjustments({
+          homeTeamId: String(match.homeTeamId),
+          awayTeamId: String(match.awayTeamId),
+          kickoffAt: match.scheduledAt,
+          dataCutoffAt,
+          ...availability,
+        }),
       });
       const result = predictionEngine.predict(
         { match, competition, homeTeam, awayTeam, featureSnapshot, dataCutoffAt },
@@ -335,10 +356,11 @@ export class AnalysisService {
     }
     const engine = getPredictionEngine(modelVersion);
 
-    const [matches, teams, competitions] = await Promise.all([
+    const [matches, teams, competitions, availability] = await Promise.all([
       this.store.listMatches(),
       this.store.listTeams(),
       this.store.listCompetitions(),
+      this.loadAvailability(),
     ]);
     const teamsById = new Map(teams.map((team) => [String(team.id), team]));
     const competitionsById = new Map(
@@ -379,6 +401,13 @@ export class AnalysisService {
         ratings: ratingsCache
           .fitFor(dataCutoffAt)
           .matchRatings(match.homeTeamId, match.awayTeamId),
+        ...availabilityAdjustments({
+          homeTeamId: String(match.homeTeamId),
+          awayTeamId: String(match.awayTeamId),
+          kickoffAt: match.scheduledAt,
+          dataCutoffAt,
+          ...availability,
+        }),
       });
 
       const result = engine.predict(
@@ -396,9 +425,11 @@ export class AnalysisService {
       samples.push({
         competitionId: String(competition.id),
         competitionName: competition.name,
+        kickoffAt: match.scheduledAt,
         confidence: result.value.confidence,
         evaluation,
         actualOutcome: evaluation.actualOutcome,
+        probabilities: result.value.outcomeProbabilities,
       });
     }
 
@@ -414,7 +445,9 @@ export class AnalysisService {
       brierScore: summary.brierScore,
       logLoss: summary.logLoss,
       details: {
+        rps: summary.rps,
         byCompetition: summary.byCompetition,
+        bySeason: summary.bySeason,
         baselines: summary.baselines,
         calibration: summary.calibration,
       },
@@ -461,8 +494,10 @@ export class AnalysisService {
       competitionName:
         competitionsById.get(String(item.competitionId))?.name ??
         String(item.competitionId),
+      kickoffAt: item.kickoffAt,
       confidence: item.confidence,
       actualOutcome: item.actualOutcome,
+      probabilities: item.outcomeProbabilities,
       evaluation: {
         predictedHome: item.predictedHome,
         predictedAway: item.predictedAway,
@@ -504,6 +539,17 @@ export class AnalysisService {
       awayForm: analysis.featureSnapshot?.awayForm ?? [],
       prediction: analysis.prediction,
     };
+  }
+
+  private async loadAvailability(): Promise<{
+    readonly absences: readonly AbsenceFact[];
+    readonly lineups: readonly LineupFact[];
+  }> {
+    const [absences, lineups] = await Promise.all([
+      this.store.listPlayerAbsences(),
+      this.store.listTeamLineups(),
+    ]);
+    return { absences, lineups };
   }
 
   private async loadHistory(): Promise<FinishedMatchResult[]> {

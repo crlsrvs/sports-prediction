@@ -1,3 +1,14 @@
+export {
+  absenceId,
+  injuriesToAbsences,
+  lineupId,
+  lineupsFromFootballDataMatches,
+  parseApiFootballInjuries,
+  resolveProviderTeam,
+  type ParsedInjury,
+  type ResolvedAbsence,
+  type ResolvedLineup,
+} from './availabilityFeed.js';
 export { checksumPayload } from './checksum.js';
 export type { RawScrape, SourceAdapter, SourceKind } from './types.js';
 export {

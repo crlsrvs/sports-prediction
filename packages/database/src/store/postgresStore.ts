@@ -29,8 +29,10 @@ import type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  PlayerAbsenceRecord,
   PredictionEvaluationFilter,
   PredictionEvaluationRecord,
+  TeamLineupRecord,
   RawRecord,
   ResolveEntityResult,
   ScrapingJobRecord,
@@ -40,7 +42,8 @@ import type {
 } from './types.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
-const migrationsDir = join(moduleDir, '../migrations');
+// src/store and dist/store both sit two levels under the package root.
+const migrationsDir = join(moduleDir, '../../migrations');
 
 function mapSport(row: Record<string, unknown>): Sport {
   return {
@@ -145,15 +148,31 @@ function mapEvaluation(row: Record<string, unknown>): PredictionEvaluationRecord
     winnerHit: Boolean(row['winner_hit']),
     brierScore: row['brier_score'] == null ? null : Number(row['brier_score']),
     logLoss: row['log_loss'] == null ? null : Number(row['log_loss']),
+    outcomeProbabilities: parseOutcomeProbabilities(row['outcome_probabilities']),
   };
 }
 
+function parseOutcomeProbabilities(value: unknown): OutcomeProbabilities | null {
+  const raw = typeof value === 'string' ? safeJson(value) : value;
+  if (!raw || typeof raw !== 'object') return null;
+  const record = raw as Record<string, unknown>;
+  const home = Number(record['home']);
+  const draw = Number(record['draw']);
+  const away = Number(record['away']);
+  if (![home, draw, away].every((item) => Number.isFinite(item))) return null;
+  return { home, draw, away };
+}
+
+function safeJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function mapBacktestRun(row: Record<string, unknown>): BacktestRunRecord {
-  const details = (row['details'] as BacktestRunRecord['details'] | null) ?? {
-    byCompetition: [],
-    baselines: [],
-    calibration: [],
-  };
+  const details = (row['details'] as Partial<BacktestRunRecord['details']> | null) ?? {};
   return {
     id: String(row['id']),
     modelVersion: String(row['model_version']),
@@ -165,8 +184,13 @@ function mapBacktestRun(row: Record<string, unknown>): BacktestRunRecord {
     brierScore: row['brier_score'] == null ? null : Number(row['brier_score']),
     logLoss: row['log_loss'] == null ? null : Number(row['log_loss']),
     details: {
+      rps: details.rps ?? null,
       byCompetition: details.byCompetition ?? [],
-      baselines: details.baselines ?? [],
+      bySeason: details.bySeason ?? [],
+      baselines: (details.baselines ?? []).map((baseline) => ({
+        ...baseline,
+        rps: baseline.rps ?? null,
+      })),
       calibration: details.calibration ?? [],
     },
   };
@@ -182,6 +206,7 @@ export class PostgresStore implements AppStore {
       '003_probabilities_and_backtests.sql',
       '004_unresolved_provisional_team.sql',
       '005_prediction_evaluations.sql',
+      '006_evaluation_probabilities_and_availability.sql',
     ] as const;
     for (const file of migrationFiles) {
       const sql = readFileSync(join(migrationsDir, file), 'utf8');
@@ -428,9 +453,9 @@ export class PostgresStore implements AppStore {
          generated_at, generated_before_kickoff, evaluated_at, confidence,
          predicted_home, predicted_away, actual_home, actual_away,
          predicted_outcome, actual_outcome, exact_score, winner_hit,
-         brier_score, log_loss
+         brier_score, log_loss, outcome_probabilities
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
        )
        ON CONFLICT (prediction_id) DO UPDATE SET
          actual_home = EXCLUDED.actual_home,
@@ -440,7 +465,11 @@ export class PostgresStore implements AppStore {
          winner_hit = EXCLUDED.winner_hit,
          brier_score = EXCLUDED.brier_score,
          log_loss = EXCLUDED.log_loss,
-         evaluated_at = EXCLUDED.evaluated_at`,
+         evaluated_at = EXCLUDED.evaluated_at,
+         outcome_probabilities = COALESCE(
+           EXCLUDED.outcome_probabilities,
+           prediction_evaluations.outcome_probabilities
+         )`,
       [
         record.predictionId,
         record.matchId,
@@ -461,6 +490,9 @@ export class PostgresStore implements AppStore {
         record.winnerHit,
         record.brierScore,
         record.logLoss,
+        record.outcomeProbabilities
+          ? JSON.stringify(record.outcomeProbabilities)
+          : null,
       ],
     );
     return record;
@@ -784,4 +816,84 @@ export class PostgresStore implements AppStore {
     );
     return Number(result.rows[0]?.count ?? 0) > 0 ? 'live' : 'seed';
   }
+
+  async upsertPlayerAbsences(records: readonly PlayerAbsenceRecord[]): Promise<number> {
+    for (const record of records) {
+      await this.pool.query(
+        `INSERT INTO player_absences (
+           id, team_id, player_name, reason, match_day, known_at, source_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (id) DO UPDATE SET
+           reason = EXCLUDED.reason,
+           known_at = LEAST(player_absences.known_at, EXCLUDED.known_at)`,
+        [
+          record.id,
+          record.teamId,
+          record.playerName,
+          record.reason,
+          record.matchDay.toISOString(),
+          record.knownAt.toISOString(),
+          record.sourceId,
+        ],
+      );
+    }
+    return records.length;
+  }
+
+  async listPlayerAbsences(): Promise<readonly PlayerAbsenceRecord[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM player_absences ORDER BY match_day DESC',
+    );
+    return result.rows.map((row) => ({
+      id: String(row['id']),
+      teamId: asTeamId(String(row['team_id'])),
+      playerName: String(row['player_name']),
+      reason: String(row['reason']),
+      matchDay: new Date(String(row['match_day'])),
+      knownAt: new Date(String(row['known_at'])),
+      sourceId: asDataSourceId(String(row['source_id'])),
+    }));
+  }
+
+  async upsertTeamLineups(records: readonly TeamLineupRecord[]): Promise<number> {
+    for (const record of records) {
+      await this.pool.query(
+        `INSERT INTO team_lineups (
+           id, team_id, match_day, known_at, source_id, player_names
+         ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+         ON CONFLICT (id) DO UPDATE SET
+           player_names = EXCLUDED.player_names,
+           known_at = LEAST(team_lineups.known_at, EXCLUDED.known_at)`,
+        [
+          record.id,
+          record.teamId,
+          record.matchDay.toISOString(),
+          record.knownAt.toISOString(),
+          record.sourceId,
+          JSON.stringify(record.playerNames),
+        ],
+      );
+    }
+    return records.length;
+  }
+
+  async listTeamLineups(): Promise<readonly TeamLineupRecord[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM team_lineups ORDER BY match_day DESC',
+    );
+    return result.rows.map((row) => ({
+      id: String(row['id']),
+      teamId: asTeamId(String(row['team_id'])),
+      matchDay: new Date(String(row['match_day'])),
+      knownAt: new Date(String(row['known_at'])),
+      sourceId: asDataSourceId(String(row['source_id'])),
+      playerNames: parsePlayerNames(row['player_names']),
+    }));
+  }
+}
+
+function parsePlayerNames(value: unknown): readonly string[] {
+  const raw = typeof value === 'string' ? safeJson(value) : value;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === 'string');
 }

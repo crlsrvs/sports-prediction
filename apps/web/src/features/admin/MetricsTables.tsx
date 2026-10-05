@@ -2,6 +2,7 @@ import type {
   BacktestBaselineDto,
   BacktestCalibrationDto,
   BacktestCompetitionDto,
+  BacktestSeasonDto,
 } from '../../shared/api.js';
 import styles from './BacktestPanel.module.css';
 
@@ -18,8 +19,10 @@ export interface MetricsSummary {
   readonly winnerRate: number;
   readonly brierScore: number | null;
   readonly logLoss: number | null;
+  readonly rps: number | null;
   readonly details: {
     readonly byCompetition: readonly BacktestCompetitionDto[];
+    readonly bySeason: readonly BacktestSeasonDto[];
     readonly baselines: readonly BacktestBaselineDto[];
     readonly calibration: readonly BacktestCalibrationDto[];
   };
@@ -38,6 +41,7 @@ export function MetricsTables({ summary }: { readonly summary: MetricsSummary })
               <th>Ganador</th>
               <th>Brier</th>
               <th>Log loss</th>
+              <th>RPS</th>
             </tr>
           </thead>
           <tbody>
@@ -46,6 +50,7 @@ export function MetricsTables({ summary }: { readonly summary: MetricsSummary })
               <td>{pct(summary.winnerRate)}</td>
               <td>{num(summary.brierScore)}</td>
               <td>{num(summary.logLoss)}</td>
+              <td>{num(summary.rps)}</td>
             </tr>
             {summary.details.baselines.map((baseline) => (
               <tr key={baseline.label}>
@@ -53,6 +58,35 @@ export function MetricsTables({ summary }: { readonly summary: MetricsSummary })
                 <td>{pct(baseline.winnerRate)}</td>
                 <td>{num(baseline.brierScore)}</td>
                 <td>{num(baseline.logLoss)}</td>
+                <td>{num(baseline.rps)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+
+      {summary.details.bySeason.length > 0 ? (
+        <table className={styles.table}>
+          <caption>Por temporada</caption>
+          <thead>
+            <tr>
+              <th>Temporada</th>
+              <th>Partidos</th>
+              <th>Ganador</th>
+              <th>Exacto</th>
+              <th>Brier</th>
+              <th>RPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.details.bySeason.map((item) => (
+              <tr key={item.season}>
+                <td>{item.season}</td>
+                <td>{item.samples}</td>
+                <td>{pct(item.winnerRate)}</td>
+                <td>{pct(item.exactScoreRate)}</td>
+                <td>{num(item.brierScore)}</td>
+                <td>{num(item.rps)}</td>
               </tr>
             ))}
           </tbody>

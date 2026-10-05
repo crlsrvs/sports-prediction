@@ -64,7 +64,7 @@
 
 **Log loss.** `−ln p(resultado real)`. 1.0986 uniforme. Castiga más las probabilidades muy equivocadas.
 
-**RPS (Ranked Probability Score).** Variante de Brier que respeta el orden local > empate > visitante. No está en el backtest de la API todavía; se midió en diagnóstico (~0.20).
+**RPS (Ranked Probability Score).** Variante de Brier que respeta el orden local > empate > visitante. Rango [0, 1]; un pronóstico uniforme vale 5/18 en victoria y 1/9 en empate. Sale en el backtest y en la temporada en vivo junto a Brier.
 
 **MAE de goles.** Error absoluto medio del marcador (local + visitante). Métrica secundaria.
 
@@ -84,7 +84,7 @@
 
 **Adapter.** Implementación de una fuente externa: fetcher + parser + función de normalización a `NormalizedFixture`. Hoy: API-Football (historial 2022–2024) y football-data.org (temporada en curso).
 
-**Migración.** Archivo SQL idempotente en `packages/database/src/migrations`, aplicado en orden en cada arranque.
+**Migración.** Archivo SQL idempotente en `packages/database/migrations`, aplicado en orden en cada arranque.
 
 ## Preguntas frecuentes
 
@@ -125,4 +125,4 @@ El matcher devolvería el primero. No ha ocurrido en 234 equipos, pero es un rie
 Casi siempre es porque cambiaste un tipo del dominio (p. ej. añadiste un campo obligatorio a `FeatureSnapshot`) y hay fixtures de test que lo construyen a mano. Actualízalos; es la señal de que el cambio se propagó bien.
 
 **¿Qué sigue en el roadmap técnico?**
-En orden de valor/costo: autenticación real para el Admin (hoy un token compartido, ver [09](./09-ci-y-despliegue.md)); RPS y métricas por temporada en el backtest; datos de alineaciones/lesiones para `injuryImpact`; compilar los paquetes a `dist/` para imágenes más ligeras. Scheduler, evaluación en vivo, CI y la receta de despliegue ya existen (ver [03](./03-datos-e-ingesta.md#scheduler), [05](./05-api-y-frontend.md#liveevaluationpanel-y-backtestpanel) y [09](./09-ci-y-despliegue.md)). El PRD (§49–54) detalla las iteraciones de producto.
+En orden de valor/costo: cuentas de usuario de verdad (el Admin ya tiene contraseña de servidor y sesión de 12 h, ver [ADR 0006](../adr/0006-admin-session.md)); una fuente de bajas que cubra la temporada en curso en el plan gratuito (el cálculo ya está, pero API-Football free suele rechazar 2026); más señal en el modelo una vez esa fuente exista. Scheduler, evaluación en vivo, RPS por temporada, CI, imágenes compiladas y la receta de despliegue ya existen. El PRD (§49–54) detalla las iteraciones de producto.

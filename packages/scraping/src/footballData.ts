@@ -19,6 +19,8 @@ export interface FootballDataTeam {
   readonly name: string;
   readonly shortName: string | null;
   readonly tla: string | null;
+  /** Present only when the provider includes it. The season list usually omits it. */
+  readonly lineup?: readonly { readonly name?: string | null }[] | null;
 }
 
 export interface FootballDataMatch {

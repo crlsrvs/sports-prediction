@@ -4,11 +4,13 @@ import {
   type DataSourceRecord,
 } from '@sports-prediction/database';
 import {
+  asDataSourceId,
   asPredictionId,
   type DataSourceId,
   type MatchContext,
 } from '@sports-prediction/domain';
 import {
+  availabilityAdjustments,
   buildFeatureSnapshot,
   buildFinishedHistory,
   fitDixonColes,
@@ -18,11 +20,18 @@ import {
   predictionEngine,
 } from '@sports-prediction/prediction';
 import {
+  absenceId,
   createApiFootballAdapterFromEnv,
   createFootballDataAdapterFromEnv,
+  currentFootballSeason,
+  injuriesToAbsences,
   ingestApiFootballFixtures,
   ingestFootballDataMatches,
+  lineupId,
+  lineupsFromFootballDataMatches,
+  parseApiFootballInjuries,
   resolveApiFootballSeason,
+  TRACKED_LEAGUE_IDS,
   trackedCompetitions,
   type FootballDataAdapter,
   type IngestFixturesResult,
@@ -110,6 +119,7 @@ async function scrapeSources(
   }
   const apiFootball = await scrapeApiFootball(store);
   details.push(`api-football:${apiFootball.detail}`);
+  details.push(await syncAvailability(store));
   return { ok: true, detail: details.join(' ; ') };
 }
 
@@ -207,6 +217,21 @@ async function syncFootballData(
       now: startedAt,
     });
     await persistIngest(store, ingested, source.id, startedAt);
+    const [aliases, teamsAfterIngest] = await Promise.all([
+      store.listEntityAliases(),
+      store.listTeams(),
+    ]);
+    const lineups = lineupsFromFootballDataMatches(matches, teamsAfterIngest, aliases).map(
+      (lineup) => ({
+      id: lineupId(String(source.id), lineup.teamId, lineup.matchDay),
+      teamId: lineup.teamId,
+      matchDay: lineup.matchDay,
+      knownAt: startedAt,
+      sourceId: source.id,
+        playerNames: lineup.playerNames,
+      }),
+    );
+    if (lineups.length > 0) await store.upsertTeamLineups(lineups);
 
     const warningText = warnings.length > 0 ? warnings.join(' | ') : null;
     await store.addScrapingJob({
@@ -256,6 +281,71 @@ async function syncFootballData(
     });
     return { detail: `failed:${message}` };
   }
+}
+
+/**
+ * One API-Football `/injuries` call per tracked league for the season in
+ * progress. Free plans often reject that season; the warning is stored and
+ * nothing is invented. `knownAt` is the fetch time, so these rows cannot
+ * leak into a backtest whose cutoff is earlier.
+ */
+async function syncAvailability(store: AppStore): Promise<string> {
+  const adapter = createApiFootballAdapterFromEnv();
+  if (!adapter) return 'availability:skipped:no-key';
+
+  const season = currentFootballSeason(new Date());
+  const knownAt = new Date();
+  const [aliases, teams] = await Promise.all([
+    store.listEntityAliases(),
+    store.listTeams(),
+  ]);
+  const warnings: string[] = [];
+  let stored = 0;
+
+  for (const leagueId of TRACKED_LEAGUE_IDS) {
+    try {
+      const raw = await adapter.fetch({ url: adapter.buildInjuriesUrl(leagueId, season) });
+      await store.saveRawRecord({
+        id: `raw-${crypto.randomUUID()}`,
+        sourceId: raw.sourceId,
+        url: raw.url,
+        fetchedAt: raw.fetchedAt,
+        statusCode: raw.statusCode,
+        contentType: raw.contentType,
+        payload: raw.payload,
+        checksum: raw.checksum,
+        metadata: { ...raw.metadata, kind: 'injuries' },
+      });
+      const parsed = parseApiFootballInjuries(raw.payload);
+      if (parsed.error) {
+        warnings.push(`${leagueId}: ${parsed.error}`);
+        continue;
+      }
+      const absences = injuriesToAbsences({ injuries: parsed.injuries, teams, aliases }).map(
+        (absence) => ({
+          id: absenceId(
+            API_FOOTBALL_SOURCE_ID,
+            absence.teamId,
+            absence.playerName,
+            absence.matchDay,
+          ),
+          teamId: absence.teamId,
+          playerName: absence.playerName,
+          reason: absence.reason,
+          matchDay: absence.matchDay,
+          knownAt,
+          sourceId: asDataSourceId(API_FOOTBALL_SOURCE_ID),
+        }),
+      );
+      stored += await store.upsertPlayerAbsences(absences);
+    } catch (error) {
+      warnings.push(`${leagueId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return `availability:season:${season}:stored:${stored}${
+    warnings.length > 0 ? `:warnings:${warnings.length}` : ''
+  }`;
 }
 
 async function scrapeApiFootball(
@@ -501,6 +591,10 @@ async function generatePredictions(
   );
   const competitions = await store.listCompetitions();
   const history = buildFinishedHistory(matches);
+  const [absences, lineups] = await Promise.all([
+    store.listPlayerAbsences(),
+    store.listTeamLineups(),
+  ]);
   // Every upcoming fixture shares the same cutoff (now), so one fit serves all.
   const ratingsNow = fitDixonColes({ history, cutoffAt: now });
 
@@ -532,6 +626,14 @@ async function generatePredictions(
       dataCutoffAt,
       history,
       ratings: ratings.matchRatings(match.homeTeamId, match.awayTeamId),
+      ...availabilityAdjustments({
+        homeTeamId: String(match.homeTeamId),
+        awayTeamId: String(match.awayTeamId),
+        kickoffAt: match.scheduledAt,
+        dataCutoffAt,
+        absences,
+        lineups,
+      }),
     });
 
     const context: MatchContext = {
@@ -578,8 +680,11 @@ async function evaluatePredictions(
       !(liveMode && String(match.sourceId) === SEED_SOURCE_ID),
   );
 
-  const alreadyEvaluated = new Set(
-    (await store.listPredictionEvaluations()).map((item) => item.predictionId),
+  const storedProbabilities = new Map(
+    (await store.listPredictionEvaluations()).map((item) => [
+      item.predictionId,
+      item.outcomeProbabilities,
+    ]),
   );
   const now = new Date();
   let evaluated = 0;
@@ -587,7 +692,10 @@ async function evaluatePredictions(
   for (const match of finished) {
     const prediction = await store.getLatestPrediction(match.id);
     if (!prediction) continue;
-    if (alreadyEvaluated.has(prediction.id)) {
+    const stored = storedProbabilities.get(prediction.id);
+    const needsProbabilities =
+      stored === null && prediction.outcomeProbabilities !== null;
+    if (stored !== undefined && !needsProbabilities) {
       skipped += 1;
       continue;
     }
@@ -620,6 +728,7 @@ async function evaluatePredictions(
       winnerHit: evaluation.winnerImpliedMatch,
       brierScore: evaluation.brierScore,
       logLoss: evaluation.logLoss,
+      outcomeProbabilities: prediction.outcomeProbabilities,
     });
     evaluated += 1;
   }

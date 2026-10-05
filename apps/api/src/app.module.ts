@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin/admin.controller.js';
+import { AdminSessionController } from './admin/adminSession.controller.js';
 import { AnalysisService } from './analysis/analysis.service.js';
 import { HealthController } from './health/health.controller.js';
 import { MatchesController } from './matches/matches.controller.js';
@@ -13,6 +14,7 @@ import { StoreModule } from './store/store.module.js';
     MatchesController,
     SportsController,
     AdminController,
+    AdminSessionController,
   ],
   providers: [AnalysisService],
 })

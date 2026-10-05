@@ -3,6 +3,7 @@ export {
   evaluatePrediction,
   impliedOutcome,
   logLoss,
+  rankedProbabilityScore,
 } from './evaluatePrediction.js';
 export {
   FOOTBALL_MODEL_VERSION,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluatePrediction } from '@sports-prediction/prediction';
-import { summarizeBacktest, type BacktestSample } from './backtest.js';
+import { footballSeasonLabel, summarizeBacktest, type BacktestSample } from './backtest.js';
 
 function sample(
   predicted: { home: number; away: number },
@@ -15,9 +15,11 @@ function sample(
   return {
     competitionId,
     competitionName: competitionId.toUpperCase(),
+    kickoffAt: new Date('2024-09-15T15:00:00Z'),
     confidence,
     evaluation,
     actualOutcome: evaluation.actualOutcome,
+    probabilities,
   };
 }
 
@@ -40,7 +42,9 @@ describe('summarizeBacktest', () => {
     expect(summary.winnerRate).toBeCloseTo(0.75, 10);
     expect(summary.brierScore).not.toBeNull();
     expect(summary.logLoss).not.toBeNull();
+    expect(summary.rps).not.toBeNull();
     expect(summary.byCompetition).toHaveLength(2);
+    expect(summary.bySeason.map((item) => item.season)).toEqual(['2024/25']);
     expect(summary.baselines.map((item) => item.label)).toEqual([
       'always_home',
       'uniform',
@@ -48,6 +52,7 @@ describe('summarizeBacktest', () => {
     ]);
     const uniform = summary.baselines.find((item) => item.label === 'uniform');
     expect(uniform?.brierScore).toBeCloseTo(2 / 3, 10);
+    expect(uniform?.rps).toBeGreaterThan(0);
     expect(summary.calibration.reduce((total, bucket) => total + bucket.samples, 0)).toBe(4);
   });
 
@@ -58,7 +63,43 @@ describe('summarizeBacktest', () => {
     // Assert
     expect(summary.samples).toBe(0);
     expect(summary.brierScore).toBeNull();
+    expect(summary.rps).toBeNull();
+    expect(summary.bySeason).toEqual([]);
     expect(summary.baselines).toEqual([]);
     expect(summary.calibration).toEqual([]);
+  });
+
+  it('splits samples into July–June seasons', () => {
+    // Arrange
+    const early = sample(
+      { home: 1, away: 0 },
+      { home: 1, away: 0 },
+      { home: 0.5, draw: 0.3, away: 0.2 },
+    );
+    const late: BacktestSample = {
+      ...sample(
+        { home: 1, away: 0 },
+        { home: 0, away: 1 },
+        { home: 0.4, draw: 0.3, away: 0.3 },
+      ),
+      kickoffAt: new Date('2025-03-02T15:00:00Z'),
+    };
+    const next: BacktestSample = {
+      ...sample(
+        { home: 2, away: 0 },
+        { home: 2, away: 0 },
+        { home: 0.6, draw: 0.2, away: 0.2 },
+      ),
+      kickoffAt: new Date('2025-08-16T15:00:00Z'),
+    };
+
+    // Act
+    const summary = summarizeBacktest([early, late, next]);
+
+    // Assert
+    expect(footballSeasonLabel(early.kickoffAt)).toBe('2024/25');
+    expect(summary.bySeason.map((item) => item.season)).toEqual(['2024/25', '2025/26']);
+    expect(summary.bySeason[0]?.samples).toBe(2);
+    expect(summary.bySeason[1]?.samples).toBe(1);
   });
 });

@@ -2,20 +2,23 @@ import type {
   BacktestBaselineMetrics,
   BacktestCalibrationBucket,
   BacktestCompetitionMetrics,
+  BacktestSeasonMetrics,
 } from '@sports-prediction/database';
 import type {
   MatchOutcome,
   OutcomeProbabilities,
   PredictionEvaluation,
 } from '@sports-prediction/domain';
-import { brierScore, logLoss } from '@sports-prediction/prediction';
+import { brierScore, logLoss, rankedProbabilityScore } from '@sports-prediction/prediction';
 
 export interface BacktestSample {
   readonly competitionId: string;
   readonly competitionName: string;
+  readonly kickoffAt: Date;
   readonly confidence: number;
   readonly evaluation: PredictionEvaluation;
   readonly actualOutcome: MatchOutcome;
+  readonly probabilities: OutcomeProbabilities | null;
 }
 
 export interface BacktestSummary {
@@ -25,9 +28,21 @@ export interface BacktestSummary {
   readonly maeGoals: number;
   readonly brierScore: number | null;
   readonly logLoss: number | null;
+  readonly rps: number | null;
   readonly byCompetition: readonly BacktestCompetitionMetrics[];
+  readonly bySeason: readonly BacktestSeasonMetrics[];
   readonly baselines: readonly BacktestBaselineMetrics[];
   readonly calibration: readonly BacktestCalibrationBucket[];
+}
+
+/** Football seasons run July–June. "2024/25" covers July 2024 through June 2025. */
+export function footballSeasonLabel(kickoffAt: Date): string {
+  const startYear =
+    kickoffAt.getUTCMonth() >= 6
+      ? kickoffAt.getUTCFullYear()
+      : kickoffAt.getUTCFullYear() - 1;
+  const end = String((startYear + 1) % 100).padStart(2, '0');
+  return `${startYear}/${end}`;
 }
 
 function mean(values: readonly number[]): number {
@@ -73,6 +88,9 @@ function buildBaselines(samples: readonly BacktestSample[]): BacktestBaselineMet
     ),
     logLoss: mean(
       samples.map((sample) => logLoss(probabilities, sample.actualOutcome)),
+    ),
+    rps: mean(
+      samples.map((sample) => rankedProbabilityScore(probabilities, sample.actualOutcome)),
     ),
   });
 
@@ -140,6 +158,53 @@ function buildByCompetition(
     .sort((a, b) => b.samples - a.samples);
 }
 
+function meanOrNull(values: readonly (number | null)[]): number | null {
+  const present = values.filter((value): value is number => value !== null);
+  return present.length > 0 ? mean(present) : null;
+}
+
+function buildBySeason(samples: readonly BacktestSample[]): BacktestSeasonMetrics[] {
+  const groups = new Map<string, BacktestSample[]>();
+  for (const sample of samples) {
+    const season = footballSeasonLabel(sample.kickoffAt);
+    const list = groups.get(season) ?? [];
+    list.push(sample);
+    groups.set(season, list);
+  }
+
+  return [...groups.entries()]
+    .map(([season, list]) => ({
+      season,
+      samples: list.length,
+      winnerRate: mean(
+        list.map((sample) => (sample.evaluation.winnerImpliedMatch ? 1 : 0)),
+      ),
+      exactScoreRate: mean(
+        list.map((sample) => (sample.evaluation.exactScore ? 1 : 0)),
+      ),
+      brierScore: meanOrNull(list.map((sample) => sample.evaluation.brierScore)),
+      logLoss: meanOrNull(list.map((sample) => sample.evaluation.logLoss)),
+      rps: meanOrNull(
+        list.map((sample) =>
+          sample.probabilities
+            ? rankedProbabilityScore(sample.probabilities, sample.actualOutcome)
+            : null,
+        ),
+      ),
+    }))
+    .sort((a, b) => a.season.localeCompare(b.season));
+}
+
+function summarizeRps(samples: readonly BacktestSample[]): number | null {
+  return meanOrNull(
+    samples.map((sample) =>
+      sample.probabilities
+        ? rankedProbabilityScore(sample.probabilities, sample.actualOutcome)
+        : null,
+    ),
+  );
+}
+
 export function summarizeBacktest(
   samples: readonly BacktestSample[],
 ): BacktestSummary {
@@ -168,7 +233,9 @@ export function summarizeBacktest(
     ),
     brierScore: briers.length > 0 ? mean(briers) : null,
     logLoss: losses.length > 0 ? mean(losses) : null,
+    rps: summarizeRps(samples),
     byCompetition: buildByCompetition(samples),
+    bySeason: buildBySeason(samples),
     baselines: buildBaselines(samples),
     calibration: buildCalibration(samples),
   };

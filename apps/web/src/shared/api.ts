@@ -74,6 +74,17 @@ export interface BacktestBaselineDto {
   readonly winnerRate: number;
   readonly brierScore: number;
   readonly logLoss: number;
+  readonly rps: number | null;
+}
+
+export interface BacktestSeasonDto {
+  readonly season: string;
+  readonly samples: number;
+  readonly winnerRate: number;
+  readonly exactScoreRate: number;
+  readonly brierScore: number | null;
+  readonly logLoss: number | null;
+  readonly rps: number | null;
 }
 
 export interface BacktestCalibrationDto {
@@ -95,7 +106,9 @@ export interface BacktestRunDto {
   readonly brierScore: number | null;
   readonly logLoss: number | null;
   readonly details: {
+    readonly rps: number | null;
     readonly byCompetition: readonly BacktestCompetitionDto[];
+    readonly bySeason: readonly BacktestSeasonDto[];
     readonly baselines: readonly BacktestBaselineDto[];
     readonly calibration: readonly BacktestCalibrationDto[];
   };
@@ -114,7 +127,9 @@ export interface LiveEvaluationDto {
   readonly maeGoals: number;
   readonly brierScore: number | null;
   readonly logLoss: number | null;
+  readonly rps: number | null;
   readonly byCompetition: readonly BacktestCompetitionDto[];
+  readonly bySeason: readonly BacktestSeasonDto[];
   readonly baselines: readonly BacktestBaselineDto[];
   readonly calibration: readonly BacktestCalibrationDto[];
 }
@@ -141,17 +156,47 @@ export const API_BASE_URL: string = (
   import.meta.env.VITE_API_URL?.trim() || '/api'
 ).replace(/\/+$/, '');
 
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN?.trim() ?? '';
+const BUILT_IN_ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN?.trim() ?? '';
+const ADMIN_SESSION_KEY = 'admin-session';
+const sessionListeners = new Set<() => void>();
+
+export function getAdminSessionToken(): string {
+  if (typeof sessionStorage === 'undefined') return '';
+  return sessionStorage.getItem(ADMIN_SESSION_KEY) ?? '';
+}
+
+export function adminCredential(): string {
+  return getAdminSessionToken() || BUILT_IN_ADMIN_TOKEN;
+}
+
+export function setAdminSessionToken(token: string | null): void {
+  if (typeof sessionStorage !== 'undefined') {
+    if (token) sessionStorage.setItem(ADMIN_SESSION_KEY, token);
+    else sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  }
+  for (const listener of sessionListeners) listener();
+}
+
+export function subscribeAdminSession(listener: () => void): () => void {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const credential = path.startsWith('/admin') ? adminCredential() : '';
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       'Content-Type': 'application/json',
-      ...(ADMIN_TOKEN && path.startsWith('/admin') ? { 'x-admin-token': ADMIN_TOKEN } : {}),
+      ...(credential ? { 'x-admin-token': credential } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
   });
+  if (response.status === 401 && path.startsWith('/admin') && path !== '/admin/session') {
+    setAdminSessionToken(null);
+  }
 
   if (!response.ok) {
     let detail = `Error API ${response.status} en ${path}`;
@@ -168,7 +213,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+export interface AdminSessionStatusDto {
+  readonly required: boolean;
+  readonly passwordLogin: boolean;
+  readonly token?: string | null;
+  readonly expiresAt?: string | null;
+}
+
 export const api = {
+  getAdminSession: () => request<AdminSessionStatusDto>('/admin/session'),
+  loginAdmin: (password: string) =>
+    request<AdminSessionStatusDto>('/admin/session', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
   getTodayMatches: () => request<MatchCard[]>('/matches/today'),
   getMatchAnalysis: (id: string) =>
     request<MatchAnalysis>(`/matches/${id}/analysis`),

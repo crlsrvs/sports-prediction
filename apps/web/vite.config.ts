@@ -3,6 +3,9 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    conditions: ['source', 'import', 'module', 'browser', 'default'],
+  },
   server: {
     port: 5173,
     proxy: {

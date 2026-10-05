@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { brierScore, evaluatePrediction, logLoss } from './evaluatePrediction.js';
+import {
+  brierScore,
+  evaluatePrediction,
+  logLoss,
+  rankedProbabilityScore,
+} from './evaluatePrediction.js';
 
 describe('evaluatePrediction', () => {
   it('scores exact result and implied winner', () => {
@@ -56,5 +61,32 @@ describe('brierScore / logLoss', () => {
 
     // Assert
     expect(score).toBeCloseTo(2 / 3, 10);
+  });
+});
+
+describe('rankedProbabilityScore', () => {
+  it('matches the known values of a uniform 1X2 forecast', () => {
+    // Arrange
+    const uniform = { home: 1 / 3, draw: 1 / 3, away: 1 / 3 };
+
+    // Act
+    const home = rankedProbabilityScore(uniform, 'home');
+    const draw = rankedProbabilityScore(uniform, 'draw');
+
+    // Assert
+    expect(home).toBeCloseTo(5 / 18, 10);
+    expect(rankedProbabilityScore(uniform, 'away')).toBeCloseTo(5 / 18, 10);
+    expect(draw).toBeCloseTo(1 / 9, 10);
+  });
+
+  it('is zero for a forecast that puts all mass on the actual outcome', () => {
+    // Arrange
+    const certain = { home: 1, draw: 0, away: 0 };
+
+    // Act
+    const score = rankedProbabilityScore(certain, 'home');
+
+    // Assert
+    expect(score).toBeCloseTo(0, 10);
   });
 });

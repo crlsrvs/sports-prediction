@@ -46,7 +46,8 @@ El archivo `.env` vive en la raíz y **nunca se commitea** (está en `.gitignore
 | `API_FOOTBALL_KEY` | vacío | Clave de API-Football. Sin ella, la fuente aparece como `disabled` y los jobs de ingesta se marcan `skipped`. |
 | `API_FOOTBALL_SEASON` | `2024` | Temporada por defecto para `import-season` cuando no se pasa una explícita. El plan gratuito solo permite 2022–2024. |
 | `FOOTBALL_DATA_KEY` | vacío | Token de football-data.org. Con él, `scrape-source` sincroniza la temporada en curso (fixtures y resultados). Sin él, la fuente aparece `disabled`. |
-| `ADMIN_TOKEN` | vacío | Si tiene valor, `/admin/*` exige la cabecera `x-admin-token`. Déjalo vacío en local; en producción es obligatorio (ver [09](./09-ci-y-despliegue.md)). |
+| `ADMIN_PASSWORD` | vacío | Contraseña del formulario de Admin. La API devuelve una sesión de 12 h; la contraseña no entra en el bundle. Vacío en local. |
+| `ADMIN_TOKEN` | vacío | Alternativa para scripts: cabecera `x-admin-token` con este valor. Si las dos están vacías, `/admin/*` queda abierto. |
 | `JOB_SCHEDULER_ENABLED` | `true` | Si el worker registra las ejecuciones periódicas (`JOB_SCHEDULES`: sincronizar + predecir cada 6 h, limpiar RAW semanal). Ponlo en `false` si no quieres gastar cuota de API desde tu máquina. |
 
 ## Levantar el entorno de desarrollo

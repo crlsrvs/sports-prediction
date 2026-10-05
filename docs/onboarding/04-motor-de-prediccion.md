@@ -54,7 +54,7 @@ buildFinishedHistory(matches)          → FinishedMatchResult[] ordenado, sin s
 - `homeAttack`/`awayAttack`: goles a favor por partido. `homeDefense`/`awayDefense`: goles en contra por partido. (Si no hay historial, 1.)
 - `homeStrength`/`awayStrength`: combinación lineal heurística; la usa `hasMinimumPredictionData` y v1.
 - `restDaysHome`/`restDaysAway`: días desde el último partido.
-- `injuryImpact*`, `squadChange*`: hoy siempre 0; están en el contrato para cuando exista fuente.
+- `injuryImpact*`, `squadChange*`: goles esperados que se restan por bajas conocidas antes del corte (`teamAvailability`). 0 si no hay datos. v3 las aplica igual que v1/v2 y añade el factor `home_availability` / `away_availability`.
 - `dataCompleteness`: 0.35 sin forma; 0.75 + 0.04 × min(partidos de forma), tope 0.95.
 - `ratings`: los `MatchRatings` que se le pasen (o `null`).
 
@@ -139,7 +139,7 @@ Brier y log loss miden la **calidad de las probabilidades**, que es lo que realm
 1. Carga historial sin seed, equipos y competiciones.
 2. Objetivos = partidos terminados de competiciones **featured** (las de soporte alimentan ratings pero no se evalúan, para que las métricas sean comparables entre corridas).
 3. Para cada objetivo, con `cutoff = kickoff − 1 h`: ratings y snapshot con solo historial anterior, predice con el modelo pedido, evalúa.
-4. Agrega con `summarizeBacktest` (`apps/api/src/analysis/backtest.ts`): tasas globales, Brier/log loss, por competición, **líneas base** (`always_home`, `uniform`, `base_rates`) y **calibración** por tramos de confianza (0–40, 40–50, …, 80–100 %).
+4. Agrega con `summarizeBacktest` (`apps/api/src/analysis/backtest.ts`): tasas globales, Brier/log loss, **RPS**, por competición, **por temporada** (julio–junio), **líneas base** (`always_home`, `uniform`, `base_rates`, cada una con RPS) y **calibración** por tramos de confianza (0–40, 40–50, …, 80–100 %).
 5. Persiste en `backtest_runs` y devuelve el registro.
 
 Optimización importante: `RatingsCache` ajusta Dixon-Coles **una vez por corte distinto** (cortes que ven el mismo número de partidos previos comparten ajuste). Sin esto, un backtest tardaría minutos; con esto, ~1.5 s.
