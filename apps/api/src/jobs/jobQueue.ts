@@ -1,6 +1,7 @@
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import {
+  DEFAULT_JOB_OPTIONS,
   DEFAULT_QUEUE_NAME,
   JOB_SCHEDULES,
   type JobName,
@@ -22,7 +23,10 @@ function getQueue(): Queue {
   if (!queue) {
     const redisUrl = process.env['REDIS_URL'] ?? 'redis://127.0.0.1:6379';
     const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
-    queue = new Queue(DEFAULT_QUEUE_NAME, { connection });
+    queue = new Queue(DEFAULT_QUEUE_NAME, {
+      connection,
+      defaultJobOptions: DEFAULT_JOB_OPTIONS,
+    });
   }
   return queue;
 }
@@ -31,10 +35,7 @@ export async function enqueueJob(
   name: JobName,
   data: Record<string, unknown> = {},
 ): Promise<{ readonly jobId: string; readonly name: JobName }> {
-  const job = await getQueue().add(name, data, {
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  });
+  const job = await getQueue().add(name, data, DEFAULT_JOB_OPTIONS);
   return { jobId: String(job.id), name };
 }
 

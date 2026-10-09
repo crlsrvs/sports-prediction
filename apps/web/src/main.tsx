@@ -5,7 +5,14 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './app/App.js';
 import './styles/global.css';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      retry: 1,
+    },
+  },
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

@@ -158,3 +158,54 @@ describe('MemoryStore.resolveEntity', () => {
     expect(await store.getTeam('team-af-50')).not.toBeNull();
   });
 });
+
+describe('MemoryStore.listMatches filters', () => {
+  it('filters matches by status, date, and limit', async () => {
+    // Arrange
+    const store = new MemoryStore();
+    const t1 = team('t1', 'Team 1');
+    const t2 = team('t2', 'Team 2');
+    await store.upsertTeam(t1);
+    await store.upsertTeam(t2);
+
+    const m1 = {
+      ...match('m1', 't1', 't2'),
+      scheduledAt: new Date('2026-02-01T10:00:00Z'),
+      status: 'finished' as const,
+    };
+    const m2 = {
+      ...match('m2', 't1', 't2'),
+      scheduledAt: new Date('2026-02-05T10:00:00Z'),
+      status: 'scheduled' as const,
+    };
+    const m3 = {
+      ...match('m3', 't1', 't2'),
+      scheduledAt: new Date('2026-02-10T10:00:00Z'),
+      status: 'scheduled' as const,
+    };
+
+    await store.upsertMatch(m1);
+    await store.upsertMatch(m2);
+    await store.upsertMatch(m3);
+
+    // Act & Assert
+    const all = await store.listMatches();
+    expect(all).toHaveLength(3);
+
+    const finished = await store.listMatches({ status: 'finished' });
+    expect(finished).toHaveLength(1);
+    expect(finished[0]?.id).toBe('m1');
+
+    const scheduled = await store.listMatches({ status: 'scheduled' });
+    expect(scheduled).toHaveLength(2);
+
+    const since = await store.listMatches({
+      since: new Date('2026-02-04T00:00:00Z'),
+    });
+    expect(since).toHaveLength(2);
+
+    const limited = await store.listMatches({ limit: 1 });
+    expect(limited).toHaveLength(1);
+    expect(limited[0]?.id).toBe('m1');
+  });
+});

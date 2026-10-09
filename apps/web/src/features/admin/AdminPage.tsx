@@ -29,6 +29,7 @@ export function AdminPage() {
   const health = useQuery({
     queryKey: ['admin', 'health'],
     queryFn: api.getAdminHealth,
+    refetchInterval: 30_000,
   });
   const sources = useQuery({
     queryKey: ['admin', 'sources'],
@@ -37,6 +38,7 @@ export function AdminPage() {
   const jobs = useQuery({
     queryKey: ['admin', 'jobs'],
     queryFn: api.getJobs,
+    refetchInterval: 15_000,
   });
   const unresolved = useQuery({
     queryKey: ['admin', 'unresolved'],

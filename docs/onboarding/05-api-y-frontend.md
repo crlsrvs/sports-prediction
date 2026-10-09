@@ -3,8 +3,8 @@
 ## API (NestJS)
 
 - Puerto `3000`, sin prefijo global. El frontend llama a `/api/...` y Vite reescribe a `/...`.
-- CORS abierto (`origin: true`) en desarrollo.
-- Un solo módulo raíz (`app.module.ts`) con 4 controllers y 1 servicio; `StoreModule` es `@Global()` y provee `AppStore` bajo el token `STORE`.
+- CORS configurable vía `ALLOWED_ORIGINS` (orígenes permitidos separados por coma con soporte para credenciales); en local dev por defecto permite `http://localhost:5173`, `http://localhost:3000` y equivalentes `127.0.0.1`.
+- Un solo módulo raíz (`app.module.ts`) con 5 controllers y 1 servicio; `StoreModule` es `@Global()` y provee `AppStore` bajo el token `STORE`.
 - Sin cuentas de usuario (fuera del MVP). En despliegue, `/admin/*` exige `x-admin-token`: o el valor de `ADMIN_TOKEN` (scripts) o una sesión de 12 h que devuelve `POST /admin/session` con `ADMIN_PASSWORD`. El formulario de Admin guarda esa sesión en `sessionStorage`. Si las dos variables están vacías, el admin queda abierto (local). Ver [09-ci-y-despliegue](./09-ci-y-despliegue.md) y [ADR 0006](../adr/0006-admin-session.md).
 - Errores: Nest devuelve `{ statusCode, message, error }`. Los mensajes de usuario están en español. Nunca filtramos trazas internas de scraping al cliente público; el Admin sí recibe el `detail` crudo.
 
@@ -92,11 +92,11 @@ curl -s -X POST localhost:3000/admin/predictions/regenerate -H 'Content-Type: ap
 
 Es el único servicio con lógica de negocio en la API. Métodos públicos:
 
-- `listTodayCards()`, `getMatchCard(id)`, `getAnalysis(id)`
+- `listTodayCards()` (usa `AnalysisPreload` para precarga en lote de partidos, equipos, competiciones y ratings, reduciendo las lecturas repetidas por tarjeta; las lecturas de predicciones ausentes y las escrituras de nuevas predicciones aún pueden ocurrir por partido), `getMatchCard(id)`, `getAnalysis(id)`
 - `generateAllPredictions()`, `regenerateOutdatedPredictions({ force })`
-- `runBacktest(modelVersion)`, `listBacktestRuns(limit)`, `listModels()`
+- `runBacktest(modelVersion)`, `listBacktestRuns(limit)`, `listModels()`, `summarizeLiveEvaluations(options)`
 
-Privados: `toCard`, `loadHistory` (→ `buildFinishedHistory`), `buildComparison`. La clase `RatingsCache` (mismo archivo) evita reajustar Dixon-Coles por cada partido en backtests y regeneraciones.
+Privados: `toCard`, `loadAvailability`, `loadHistory` (usa `listMatches({ status: 'finished' })` para filtrar en la BD en vez de traer toda la tabla a memoria → `buildFinishedHistory`), `buildComparison`. La clase `RatingsCache` (mismo archivo) evita reajustar Dixon-Coles por cada partido en backtests, tarjetas y regeneraciones.
 
 Si la lógica crece, el siguiente paso natural es separar un `BacktestService` y un `PredictionService`; hoy no era necesario.
 
@@ -106,7 +106,7 @@ Si la lógica crece, el siguiente paso natural es separar un `BacktestService` y
 
 ```text
 apps/web/src/
-  main.tsx                 QueryClientProvider + BrowserRouter
+  main.tsx                 QueryClientProvider (staleTime: 60s, retry: 1) + BrowserRouter
   app/App.tsx              layout, header contextual, rutas
   features/
     today/TodayDashboard.tsx        /            cards, filtros, banner seed/live
@@ -122,7 +122,7 @@ apps/web/src/
 Reglas:
 
 - **CSS Modules nativos**, nombres BEM-ish. Sin Tailwind, Sass ni kits de UI (ADR 0001).
-- **TanStack Query** para todo dato de servidor. Claves: `['matches','today']`, `['matches', id, 'analysis']`, `['meta']`, `['teams']`, `['admin', ...]`. Tras una mutación en Admin invalidamos `['admin']` y, si afecta a predicciones, `['matches']`.
+- **TanStack Query** para todo dato de servidor. Opciones globales: `staleTime: 60_000` (mantiene los datos frescos durante 60 s y reduce refetches por montaje o foco; la invalidación y el polling pueden seguir consultando) y `retry: 1`. En el panel de Admin, las queries de `jobs` y `health` usan `refetchInterval` (15s y 30s) para consultar periódicamente el estado; `schedules` se actualiza cada 60s. Claves: `['matches','today']`, `['matches', id, 'analysis']`, `['meta']`, `['teams']`, `['admin', ...]`. Tras una mutación en Admin invalidamos `['admin']` y, si afecta a predicciones, `['matches']`.
 - Tipos de dominio importados directamente de `@sports-prediction/domain`; los DTOs que no existen en dominio (fuentes, jobs, backtests) están en `shared/api.ts`.
 - Textos en español. Si añades uno, piensa en que mañana habrá i18n: no concatenes frases con lógica.
 - Sin `any`. `strict` + `exactOptionalPropertyTypes` + `noUncheckedIndexedAccess`: `array[0]` es `T | undefined`.

@@ -7,10 +7,14 @@ import {
 import type { AppStore, BacktestRunRecord } from '@sports-prediction/database';
 import {
   asPredictionId,
+  type Competition,
   type FeatureSnapshot,
+  type Match,
   type MatchAnalysis,
   type MatchCard,
   type MatchContext,
+  type Prediction,
+  type Team,
   type TeamComparisonMetric,
 } from '@sports-prediction/domain';
 import {
@@ -100,15 +104,34 @@ class RatingsCache {
   }
 }
 
+interface AnalysisPreload {
+  readonly matchesById?: ReadonlyMap<string, Match>;
+  readonly teamsById?: ReadonlyMap<string, Team>;
+  readonly competitionsById?: ReadonlyMap<string, Competition>;
+  readonly history?: readonly FinishedMatchResult[];
+  readonly availability?: {
+    readonly absences: readonly AbsenceFact[];
+    readonly lineups: readonly LineupFact[];
+  };
+  readonly ratingsCache?: RatingsCache;
+  readonly latestPredictionsById?: ReadonlyMap<string, Prediction>;
+}
+
 @Injectable()
 export class AnalysisService {
   constructor(@Inject(STORE) private readonly store: AppStore) {}
 
   async listTodayCards(): Promise<readonly MatchCard[]> {
-    const [allMatches, competitions] = await Promise.all([
-      this.store.listMatches(),
-      this.store.listCompetitions(),
-    ]);
+    const [allMatches, competitions, teams, history, availability, allPredictions] =
+      await Promise.all([
+        this.store.listMatches(),
+        this.store.listCompetitions(),
+        this.store.listTeams(),
+        this.loadHistory(),
+        this.loadAvailability(),
+        this.store.listPredictions(),
+      ]);
+
     // Support leagues (inactive competitions) feed the models but stay out of
     // the public product.
     const featuredCompetitionIds = new Set(
@@ -119,9 +142,31 @@ export class AnalysisService {
     );
     const selected = selectDashboardMatches(matches);
 
+    const matchesById = new Map(allMatches.map((m) => [String(m.id), m]));
+    const teamsById = new Map(teams.map((t) => [String(t.id), t]));
+    const competitionsById = new Map(competitions.map((c) => [String(c.id), c]));
+    const latestPredictionsById = new Map<string, Prediction>();
+    for (const pred of allPredictions) {
+      const prev = latestPredictionsById.get(String(pred.matchId));
+      if (!prev || pred.generatedAt.getTime() > prev.generatedAt.getTime()) {
+        latestPredictionsById.set(String(pred.matchId), pred);
+      }
+    }
+    const ratingsCache = new RatingsCache(history);
+
+    const preload: AnalysisPreload = {
+      matchesById,
+      teamsById,
+      competitionsById,
+      history,
+      availability,
+      ratingsCache,
+      latestPredictionsById,
+    };
+
     const cards: MatchCard[] = [];
     for (const match of selected) {
-      const card = await this.toCard(match.id);
+      const card = await this.toCard(match.id, preload);
       if (card) cards.push(card);
     }
     return cards;
@@ -133,14 +178,22 @@ export class AnalysisService {
     return card;
   }
 
-  async getAnalysis(matchId: string): Promise<MatchAnalysis> {
-    const match = await this.store.getMatch(matchId);
+  async getAnalysis(
+    matchId: string,
+    preload?: AnalysisPreload,
+  ): Promise<MatchAnalysis> {
+    const match =
+      preload?.matchesById?.get(matchId) ?? (await this.store.getMatch(matchId));
     if (!match) throw new NotFoundException('Partido no encontrado');
 
     const [homeTeam, awayTeam, competitions] = await Promise.all([
-      this.store.getTeam(match.homeTeamId),
-      this.store.getTeam(match.awayTeamId),
-      this.store.listCompetitions(),
+      preload?.teamsById?.get(String(match.homeTeamId)) ??
+        this.store.getTeam(match.homeTeamId),
+      preload?.teamsById?.get(String(match.awayTeamId)) ??
+        this.store.getTeam(match.awayTeamId),
+      preload?.competitionsById
+        ? [...preload.competitionsById.values()]
+        : this.store.listCompetitions(),
     ]);
 
     if (!homeTeam || !awayTeam) {
@@ -148,7 +201,9 @@ export class AnalysisService {
     }
 
     const competition =
-      competitions.find((item) => item.id === match.competitionId) ?? null;
+      preload?.competitionsById?.get(String(match.competitionId)) ??
+      competitions.find((item) => item.id === match.competitionId) ??
+      null;
     if (!competition) {
       throw new NotFoundException('Competición no encontrada');
     }
@@ -158,10 +213,12 @@ export class AnalysisService {
     );
 
     const [history, availability] = await Promise.all([
-      this.loadHistory(),
-      this.loadAvailability(),
+      preload?.history ?? this.loadHistory(),
+      preload?.availability ?? this.loadAvailability(),
     ]);
-    const ratings = fitDixonColes({ history, cutoffAt: dataCutoffAt });
+    const ratings =
+      preload?.ratingsCache?.fitFor(dataCutoffAt) ??
+      fitDixonColes({ history, cutoffAt: dataCutoffAt });
     const featureSnapshot = buildFeatureSnapshot({
       matchId: match.id,
       homeTeamId: match.homeTeamId,
@@ -188,7 +245,9 @@ export class AnalysisService {
       dataCutoffAt,
     };
 
-    let prediction = await this.store.getLatestPrediction(match.id);
+    let prediction =
+      preload?.latestPredictionsById?.get(String(match.id)) ??
+      (await this.store.getLatestPrediction(match.id));
     let unavailableReason: string | null = null;
 
     if (!prediction) {
@@ -526,8 +585,11 @@ export class AnalysisService {
     };
   }
 
-  private async toCard(matchId: string): Promise<MatchCard | null> {
-    const analysis = await this.getAnalysis(matchId).catch(() => null);
+  private async toCard(
+    matchId: string,
+    preload?: AnalysisPreload,
+  ): Promise<MatchCard | null> {
+    const analysis = await this.getAnalysis(matchId, preload).catch(() => null);
     if (!analysis) return null;
 
     return {
@@ -553,7 +615,7 @@ export class AnalysisService {
   }
 
   private async loadHistory(): Promise<FinishedMatchResult[]> {
-    const matches = await this.store.listMatches();
+    const matches = await this.store.listMatches({ status: 'finished' });
     return buildFinishedHistory(matches);
   }
 

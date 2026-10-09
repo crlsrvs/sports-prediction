@@ -22,6 +22,7 @@ Léela en orden la primera vez; después úsala como referencia.
 - [`docs/PRD.md`](../PRD.md): el documento de producto. Define qué es el MVP, qué queda para V2 y por qué. Consúltalo antes de decidir qué se muestra al usuario final.
 - [`docs/adr/`](../adr/): decisiones de arquitectura con su contexto. Antes de introducir una librería o cambiar una pieza estructural, revisa si hay un ADR y, si no, escribe uno.
 - [`CHANGELOG.md`](../../CHANGELOG.md): historial de cambios en formato Keep a Changelog.
+- [ADR 0007](../adr/0007-worker-lifecycle-and-query-optimizations.md): reutilización del store, precarga de consultas, CORS, intentos de jobs y caché del frontend; incluye los límites de estas mejoras.
 
 ## Estado actual del proyecto (resumen de una página)
 

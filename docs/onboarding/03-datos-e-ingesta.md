@@ -136,8 +136,8 @@ Nombres en `packages/shared/src/jobs.ts`; implementación en `apps/worker/src/pi
 | `import-season` | Descarga una temporada completa de las 6 ligas desde API-Football (`data.season` o `API_FOOTBALL_SEASON`), crea competiciones faltantes, guarda RAW, ingiere. No encola pendientes (crearía cientos de equipos legítimos) | **la vía del historial 2022–2024** |
 | `normalize-source-data` | — | `skipped`: la normalización ocurre inline durante el ingest |
 | `calculate-features` | — | `skipped`: las features se calculan bajo demanda |
-| `generate-predictions` | Para cada partido `scheduled` sin predicción **que empiece en los próximos `PREDICTION_HORIZON_DAYS` (10) días**: construye snapshot, predice con el modelo por defecto y guarda. Los ratings se ajustan una sola vez (todos comparten cutoff = ahora) | funcional |
-| `evaluate-predictions` | Para cada partido terminado con predicción: calcula acierto 1X2, marcador exacto, Brier y log loss y lo **persiste en `prediction_evaluations`** (una fila por predicción; las ya evaluadas se saltan). Guarda `generated_before_kickoff` para separar lo que se predijo de verdad antes del partido de lo rellenado a posteriori. En modo live ignora partidos seed | funcional |
+| `generate-predictions` | Para cada partido `scheduled` sin predicción **que empiece en los próximos `PREDICTION_HORIZON_DAYS` (10) días**: precarga datos en memoria en lote (sin queries N+1), construye snapshot, predice con el modelo por defecto y guarda. Se reutiliza el ajuste de ratings para cutoff = ahora; si el kickoff está a menos de 5 minutos se ajusta con el corte anterior correspondiente | funcional |
+| `evaluate-predictions` | Para cada partido terminado con predicción: precarga predicciones y evaluaciones previas en lote, calcula acierto 1X2, marcador exacto, Brier y log loss y lo **persiste en `prediction_evaluations`** (una fila por predicción; las ya evaluadas se saltan). Guarda `generated_before_kickoff` para separar lo que se predijo de verdad antes del partido de lo rellenado a posteriori. En modo live ignora partidos seed | funcional |
 | `cleanup-raw-data` | Borra RAW > 30 días | funcional |
 | `source-health-check` | Cuenta fuentes | informativo |
 
@@ -150,11 +150,13 @@ POST /admin/jobs
 { "name": "import-season", "season": 2023 }
 ```
 
-`AdminController.enqueue` valida el nombre con `isJobName`, valida `season` si viene, y llama a `enqueueJob(name, data)` (`apps/api/src/jobs/jobQueue.ts`), que usa un `Queue` de BullMQ. El worker recibe `job.name` y `job.data` y llama a `runPipelineJob`.
+`AdminController.enqueue` valida el nombre con `isJobName`, valida `season` si viene, y llama a `enqueueJob(name, data)` (`apps/api/src/jobs/jobQueue.ts`), que usa un `Queue` de BullMQ con `DEFAULT_JOB_OPTIONS` (3 intentos totales (el inicial y hasta 2 reintentos) con backoff exponencial de 5 segundos de base, retención de los últimos 100 completados y 50 fallidos para depuración). El worker recibe `job.name` y `job.data` y llama a `runPipelineJob`.
 
-`scrape-source` admite `{ "chain": true }`: tras sincronizar ejecuta `generate-predictions` y `evaluate-predictions` en el mismo job, de modo que una sola corrida deja el dashboard al día. Es lo que usa el scheduler.
+`scrape-source` admite `{ "chain": true }`: tras sincronizar ejecuta `generate-predictions` y `evaluate-predictions` en el mismo job, de modo que una corrida guarda los datos disponibles, genera predicciones faltantes y evalúa resultados. No recalcula predicciones existentes; para eso usa la regeneración administrativa. Es lo que usa el scheduler.
 
-### Scheduler
+#Los reintentos de BullMQ se aplican cuando el procesador lanza un error. Los fallos de proveedor capturados y devueltos como `detail: failed:...` o advertencias pueden completar el job sin activar esos reintentos. El scheduler fija la retención en la plantilla y la cola del worker configura los intentos y el backoff mediante `DEFAULT_JOB_OPTIONS`.
+
+## Scheduler
 
 Las ejecuciones periódicas se declaran en `packages/shared/src/schedules.ts` (`JOB_SCHEDULES`) y las registra el worker al arrancar (`apps/worker/src/scheduler.ts`, `reconcileSchedules`) como *job schedulers* de BullMQ, siempre en UTC:
 

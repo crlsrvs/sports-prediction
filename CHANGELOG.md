@@ -84,6 +84,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `node dist/main.js` (~350 MB). `source` export condition keeps dev and tests
   on TypeScript. See ADR 0005.
 
+- Configurable CORS via `ALLOWED_ORIGINS` in NestJS API with credentials support
+  and local dev fallbacks, replacing open `origin: true`.
+- BullMQ `DEFAULT_JOB_OPTIONS` with 3 total attempts (up to 2 retries), exponential backoff (5s delay),
+  and retention for completed/failed jobs (50 failed kept for debugging).
+- `MatchFilter` interface in `@sports-prediction/database` (`status`, `since`, `limit`)
+  supporting parameterized SQL filtering in `PostgresStore` and filtering in `MemoryStore`.
+- `AnalysisPreload` in `AnalysisService` to batch-preload matches, teams, competitions,
+  availability, and ratings for dashboard cards.
+- TanStack Query default configuration (`staleTime: 60_000`, `retry: 1`) in web frontend,
+  and background polling (`refetchInterval`) for jobs and system health in the admin panel.
+
 ### Fixed
 
 - Demo (seed) results no longer contaminate ratings or backtests once real data exists.
@@ -92,9 +103,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `STORE_ALLOW_MEMORY_FALLBACK`. `GET /health` reports the active store and reason.
 - Running a backtest is now `POST /admin/backtests`; `GET /admin/backtests` is read-only
   (replaces `GET /admin/backtests/history`).
+- Worker `AppStore` connection exhaustion fixed by reusing a persistent store
+  instance initialized once on worker bootstrap instead of creating new pools and
+  running migrations per BullMQ job.
+- N+1 database queries in worker pipeline (`generatePredictions` and `evaluatePredictions`)
+  eliminated by preloading teams, competitions, and predictions in parallel.
+- `AnalysisService.listTodayCards()` repeated entity/history reads reduced by batch
+  preloading and reusing `RatingsCache`; missing-prediction reads and writes remain per match.
 
 ### Changed
 
 - Default prediction model is now `football-v3` (`football-v1`/`v2` kept for comparison).
 - Match comparison shows opponent-adjusted attack/defense ratings when available.
 - `predictions` table gains `outcome_probabilities` (migration 003).
+- `AnalysisService.loadHistory()` now queries `listMatches({ status: 'finished' })`
+  to filter matches at the database level instead of loading all matches into memory.
+- API CORS configuration changed from permissive `origin: true` to `ALLOWED_ORIGINS`
+  with dev server fallbacks.

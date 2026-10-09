@@ -37,7 +37,7 @@ docker run --rm -p 3100:3000 \
 curl localhost:3100/health
 ```
 
-El `--tsconfig` en el comando no es decorativo: NestJS usa decoradores con `emitDecoratorMetadata`, y sin ese tsconfig `tsx` falla al transformar los controladores.
+En producción Node ejecuta `dist/main.js`, sin `tsx` ni `--tsconfig`: el build ya compiló los decoradores de NestJS con `emitDecoratorMetadata`. En desarrollo la API sí pasa `--tsconfig tsconfig.json` a `tsx`.
 
 ## Variables de entorno en producción
 
@@ -53,6 +53,7 @@ El `--tsconfig` en el comando no es decorativo: NestJS usa decoradores con `emit
 | `API_FOOTBALL_KEY`, `FOOTBALL_DATA_KEY` | sí | sí | La API las usa para "Probar fuente"; el worker para sincronizar. |
 | `API_FOOTBALL_SEASON` | — | `2024` | Solo para `import-season` manual. |
 | `PORT` | `3000` | — | Render lo fija él; el Dockerfile expone 3000. |
+| `ALLOWED_ORIGINS` | origen del frontend | — | Lista separada por comas, sin rutas ni barra final. Configúrala manualmente en el servicio API de Render: el Blueprint no la declara. Sin ella solo se permiten orígenes locales. |
 
 Frontend (Vercel, variables de build):
 
@@ -91,7 +92,7 @@ Si prefieres otro host (Fly.io, Railway, una VM), la imagen es la misma: un cont
 
 1. "Add New Project", importa el repo y pon **Root Directory = `apps/web`**. `apps/web/vercel.json` ya indica instalar y construir desde la raíz del monorepo y reescribir rutas a `index.html` (SPA).
 2. Variable: `VITE_API_URL`. No hace falta `VITE_ADMIN_TOKEN` si la API tiene `ADMIN_PASSWORD`.
-3. CORS: la API acepta cualquier origen (`origin: true`), así que no hay nada que configurar. Si en el futuro se restringe, el dominio de Vercel debe estar en la lista.
+3. Configura `ALLOWED_ORIGINS=https://<frontend>.vercel.app` en la API y reinicia o redespliega el servicio. Si usas un dominio propio o previews, añade los orígenes exactos separados por comas. `*` abre el acceso CORS y no es compatible con peticiones de navegador en modo de credenciales; usa una lista explícita para producción.
 
 ### 5. Comprobación final
 
@@ -101,6 +102,8 @@ Si prefieres otro host (Fly.io, Railway, una VM), la imagen es la misma: un cont
 - Tras la primera sincronización programada, `scraping_jobs` tiene una fila `success` de `football-data` y "Temporada en vivo" empieza a contar partidos cuando se juega la siguiente jornada.
 
 ## Problemas típicos
+
+**El frontend funciona localmente pero el navegador bloquea la API en producción.** Revisa `VITE_API_URL` y `ALLOWED_ORIGINS`. El origen del frontend (protocolo, dominio y puerto, sin ruta) debe figurar en la lista de la API. Un `curl` exitoso no comprueba CORS.
 
 **`/health` responde pero `store` es `memory`.** `DATABASE_URL` vacía en esa plataforma. Con `STORE_ALLOW_MEMORY_FALLBACK=false` y URL inválida el proceso no arranca, así que si ves `memory` es porque la variable no llegó.
 

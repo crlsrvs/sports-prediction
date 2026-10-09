@@ -46,11 +46,23 @@ import {
 import type { JobName } from './queues.js';
 import { JOB_NAMES } from './queues.js';
 
+let defaultStore: AppStore | null = null;
+
+async function getPipelineStore(storeOverride?: AppStore): Promise<AppStore> {
+  if (storeOverride) return storeOverride;
+  if (!defaultStore) {
+    const result = await createAppStore();
+    defaultStore = result.store;
+  }
+  return defaultStore;
+}
+
 export async function runPipelineJob(
   name: JobName,
   data: Record<string, unknown> = {},
+  storeOverride?: AppStore,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
-  const { store } = await createAppStore();
+  const store = await getPipelineStore(storeOverride);
 
   switch (name) {
     case JOB_NAMES.DISCOVER_TODAYS_MATCHES: {
@@ -582,29 +594,42 @@ async function importSeason(
 async function generatePredictions(
   store: AppStore,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
-  const matches = await store.listMatches();
+  const [matches, competitions, teams, absences, lineups, allPredictions] =
+    await Promise.all([
+      store.listMatches(),
+      store.listCompetitions(),
+      store.listTeams(),
+      store.listPlayerAbsences(),
+      store.listTeamLineups(),
+      store.listPredictions(),
+    ]);
+
   const now = new Date();
   const scheduled = matches.filter(
     (match) =>
       match.status === 'scheduled' &&
       isWithinPredictionHorizon(match.scheduledAt, now),
   );
-  const competitions = await store.listCompetitions();
   const history = buildFinishedHistory(matches);
-  const [absences, lineups] = await Promise.all([
-    store.listPlayerAbsences(),
-    store.listTeamLineups(),
-  ]);
+  const teamsById = new Map(teams.map((item) => [String(item.id), item]));
+  const latestPredictions = new Map<string, (typeof allPredictions)[number]>();
+  for (const pred of allPredictions) {
+    const prev = latestPredictions.get(String(pred.matchId));
+    if (!prev || pred.generatedAt.getTime() > prev.generatedAt.getTime()) {
+      latestPredictions.set(String(pred.matchId), pred);
+    }
+  }
+
   // Every upcoming fixture shares the same cutoff (now), so one fit serves all.
   const ratingsNow = fitDixonColes({ history, cutoffAt: now });
 
   let generated = 0;
   for (const match of scheduled) {
-    const existing = await store.getLatestPrediction(match.id);
+    const existing = latestPredictions.get(String(match.id));
     if (existing) continue;
 
-    const homeTeam = await store.getTeam(match.homeTeamId);
-    const awayTeam = await store.getTeam(match.awayTeamId);
+    const homeTeam = teamsById.get(String(match.homeTeamId));
+    const awayTeam = teamsById.get(String(match.awayTeamId));
     const competition = competitions.find(
       (item) => item.id === match.competitionId,
     );
@@ -668,10 +693,16 @@ async function generatePredictions(
 async function evaluatePredictions(
   store: AppStore,
 ): Promise<{ readonly ok: true; readonly detail: string }> {
-  const matches = await store.listMatches();
+  const [matches, dataMode, evaluations, allPredictions] = await Promise.all([
+    store.listMatches(),
+    store.getDataMode(),
+    store.listPredictionEvaluations(),
+    store.listPredictions(),
+  ]);
+
   // Demo results are fabricated; once real data exists they must not enter
   // the live scorecard (same rule as buildFinishedHistory).
-  const liveMode = (await store.getDataMode()) === 'live';
+  const liveMode = dataMode === 'live';
   const finished = matches.filter(
     (match) =>
       match.status === 'finished' &&
@@ -681,16 +712,25 @@ async function evaluatePredictions(
   );
 
   const storedProbabilities = new Map(
-    (await store.listPredictionEvaluations()).map((item) => [
+    evaluations.map((item) => [
       item.predictionId,
       item.outcomeProbabilities,
     ]),
   );
+
+  const latestPredictions = new Map<string, (typeof allPredictions)[number]>();
+  for (const pred of allPredictions) {
+    const prev = latestPredictions.get(String(pred.matchId));
+    if (!prev || pred.generatedAt.getTime() > prev.generatedAt.getTime()) {
+      latestPredictions.set(String(pred.matchId), pred);
+    }
+  }
+
   const now = new Date();
   let evaluated = 0;
   let skipped = 0;
   for (const match of finished) {
-    const prediction = await store.getLatestPrediction(match.id);
+    const prediction = latestPredictions.get(String(match.id));
     if (!prediction) continue;
     const stored = storedProbabilities.get(prediction.id);
     const needsProbabilities =

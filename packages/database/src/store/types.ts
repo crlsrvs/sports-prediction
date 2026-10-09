@@ -5,6 +5,7 @@ import type {
   Match,
   MatchId,
   MatchOutcome,
+  MatchStatus,
   OutcomeProbabilities,
   Prediction,
   Sport,
@@ -195,6 +196,12 @@ export interface PredictionEvaluationFilter {
   readonly liveOnly?: boolean;
 }
 
+export interface MatchFilter {
+  readonly status?: MatchStatus;
+  readonly since?: Date;
+  readonly limit?: number;
+}
+
 export interface AppStore {
   listSports(): Promise<readonly Sport[]>;
   upsertSport(sport: Sport): Promise<Sport>;
@@ -203,7 +210,7 @@ export interface AppStore {
   listTeams(): Promise<readonly Team[]>;
   getTeam(id: string): Promise<Team | null>;
   upsertTeam(team: Team): Promise<Team>;
-  listMatches(): Promise<readonly Match[]>;
+  listMatches(filter?: MatchFilter): Promise<readonly Match[]>;
   getMatch(id: MatchId | string): Promise<Match | null>;
   upsertMatch(match: Match): Promise<Match>;
   listPredictions(): Promise<readonly Prediction[]>;

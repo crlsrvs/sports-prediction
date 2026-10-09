@@ -20,6 +20,7 @@ export type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  MatchFilter,
   PlayerAbsenceRecord,
   PredictionEvaluationFilter,
   PredictionEvaluationRecord,

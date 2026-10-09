@@ -172,7 +172,7 @@ Por competición (v3): Premier 0.578, La Liga 0.591, Champions 0.574. Para conte
 ## Qué no hace el modelo (y por qué)
 
 - **No usa cuotas de apuestas.** El PRD las excluye del MVP. Sería una línea base valiosa en backtesting, pero no una feature.
-- **No usa lesiones ni alineaciones.** No hay fuente. Los campos existen en el snapshot para cuando la haya.
-- **No usa xG.** Idem.
+- **Disponibilidad limitada por las fuentes.** Sí incorpora lesiones desde API-Football y alineaciones desde football-data.org cuando están disponibles y eran conocidas antes del corte. Las ausencias aportan −0.06 goles por jugador (máximo −0.30); la proporción de ausentes de la alineación previa aporta `squadChange * 0.05`. Sin datos el ajuste es cero; no representa una confirmación de plantilla completa.
+- **No usa xG de tiros.** Los goles esperados de la salida se estiman con resultados históricos y ratings; no se ingieren eventos de tiros ni sus probabilidades.
 - **No genera texto con LLM.** Las explicaciones son plantillas; es una regla de arquitectura.
 - **No muestra 1X2 al usuario final.** Las probabilidades se calculan y persisten, y se ven en Admin, pero la página pública de análisis no las renderiza (PRD: V2).

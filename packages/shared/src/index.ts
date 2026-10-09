@@ -40,6 +40,7 @@ export {
 } from './schedules.js';
 export {
   API_FOOTBALL_SOURCE_ID,
+  DEFAULT_JOB_OPTIONS,
   FOOTBALL_DATA_SOURCE_ID,
   isLiveSourceId,
   DEFAULT_QUEUE_NAME,

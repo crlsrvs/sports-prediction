@@ -15,6 +15,7 @@ import type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  MatchFilter,
   PlayerAbsenceRecord,
   PredictionEvaluationFilter,
   PredictionEvaluationRecord,
@@ -103,10 +104,20 @@ export class MemoryStore implements AppStore {
     return team;
   }
 
-  async listMatches(): Promise<readonly Match[]> {
-    return [...this.matches.values()].sort(
-      (a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime(),
-    );
+  async listMatches(filter?: MatchFilter): Promise<readonly Match[]> {
+    let result = [...this.matches.values()];
+    if (filter?.status) {
+      result = result.filter((item) => item.status === filter.status);
+    }
+    if (filter?.since) {
+      const sinceMs = filter.since.getTime();
+      result = result.filter((item) => item.scheduledAt.getTime() >= sinceMs);
+    }
+    result.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+    if (filter?.limit && filter.limit > 0) {
+      result = result.slice(0, filter.limit);
+    }
+    return result;
   }
 
   async getMatch(id: MatchId | string): Promise<Match | null> {

@@ -1,6 +1,11 @@
 import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
-import { isJobSchedulerEnabled, JOB_SCHEDULES } from '@sports-prediction/shared';
+import { createAppStore } from '@sports-prediction/database';
+import {
+  DEFAULT_JOB_OPTIONS,
+  isJobSchedulerEnabled,
+  JOB_SCHEDULES,
+} from '@sports-prediction/shared';
 import { runPipelineJob } from './pipeline.js';
 import { DEFAULT_QUEUE_NAME, type JobName } from './queues.js';
 import { loadRedisConfig } from './redis.js';
@@ -9,6 +14,7 @@ import { asSchedulerQueue, reconcileSchedules } from './scheduler.js';
 async function bootstrap(): Promise<void> {
   const { redis_url } = loadRedisConfig();
   const connection = new Redis(redis_url, { maxRetriesPerRequest: null });
+  const { store } = await createAppStore();
 
   const worker = new Worker(
     DEFAULT_QUEUE_NAME,
@@ -16,6 +22,7 @@ async function bootstrap(): Promise<void> {
       runPipelineJob(
         job.name as JobName,
         (job.data ?? {}) as Record<string, unknown>,
+        store,
       ),
     { connection },
   );
@@ -33,7 +40,10 @@ async function bootstrap(): Promise<void> {
   });
 
   if (isJobSchedulerEnabled()) {
-    const queue = new Queue(DEFAULT_QUEUE_NAME, { connection });
+    const queue = new Queue(DEFAULT_QUEUE_NAME, {
+      connection,
+      defaultJobOptions: DEFAULT_JOB_OPTIONS,
+    });
     const result = await reconcileSchedules(asSchedulerQueue(queue));
     for (const schedule of JOB_SCHEDULES) {
       console.log(`Schedule ${schedule.id}: ${schedule.name} @ ${schedule.cron} UTC`);

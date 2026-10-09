@@ -100,7 +100,7 @@ Reglas: `domain` y `shared` no dependen de nadie. `features`, `prediction`, `nor
 ### `packages/shared`
 
 - `Result<T, E>` con `ok()`/`err()`: los motores no lanzan excepciones, devuelven `Result`.
-- `JOB_NAMES`, `DEFAULT_QUEUE_NAME`, `API_FOOTBALL_SOURCE_ID`, `FOOTBALL_DATA_SOURCE_ID`, `SEED_SOURCE_ID`, `isLiveSourceId`, `MAX_RAW_RETENTION_DAYS`, `PREDICTION_HORIZON_DAYS` / `isWithinPredictionHorizon`.
+- `JOB_NAMES`, `DEFAULT_QUEUE_NAME`, `DEFAULT_JOB_OPTIONS` (reintentos y retención de fallos), `API_FOOTBALL_SOURCE_ID`, `FOOTBALL_DATA_SOURCE_ID`, `SEED_SOURCE_ID`, `isLiveSourceId`, `MAX_RAW_RETENTION_DAYS`, `PREDICTION_HORIZON_DAYS` / `isWithinPredictionHorizon`.
 - `dixonColesTau`: la corrección de marcadores bajos, compartida entre `features` (ajuste) y `prediction` (distribución).
 
 ### `packages/features`
@@ -130,7 +130,7 @@ Reglas: `domain` y `shared` no dependen de nadie. `features`, `prediction`, `nor
 
 ### `packages/database`
 
-- `store/types.ts`: la interfaz `AppStore`. Es el **único** contrato de persistencia que conocen API y worker.
+- `store/types.ts`: la interfaz `AppStore` y `MatchFilter` (`status`, `since`, `limit`). Es el **único** contrato de persistencia que conocen API y worker.
 - `store/memoryStore.ts`: implementación en memoria, usada en tests y como fallback.
 - `store/postgresStore.ts`: implementación `pg`, con `migrate()` y `seedIfEmpty()`.
 - `store/seed.ts`: datos de demostración (3 competiciones, 8 equipos, 26 resultados ficticios, 3 partidos programados).
@@ -143,7 +143,7 @@ NestJS con módulos por feature: `health`, `sports`, `matches`, `analysis`, `adm
 
 ### `apps/worker`
 
-Un `Worker` de BullMQ sobre la cola `sports-prediction` que delega en `runPipelineJob(name, data)` (`pipeline.ts`). Cada `case` del `switch` es un job. Si añades un job nuevo y olvidas el `case`, el `never` exhaustivo rompe el typecheck a propósito.
+Un `Worker` de BullMQ sobre la cola `sports-prediction` que delega en `runPipelineJob(name, data, store)` (`pipeline.ts`). Al arrancar (`main.ts`) inicializa el `AppStore` una sola vez y lo inyecta a todos los jobs para reutilizar el pool de conexiones de Postgres sin agotar recursos. Cada `case` del `switch` es un job. Si añades un job nuevo y olvidas el `case`, el `never` exhaustivo rompe el typecheck a propósito.
 
 Al arrancar, además, registra las ejecuciones periódicas (`scheduler.ts` → `reconcileSchedules`) declaradas en `packages/shared/src/schedules.ts`. El worker es el único que escribe schedules en Redis; la API solo los lee (`GET /admin/schedules`). Ver [03-datos-e-ingesta](./03-datos-e-ingesta.md#scheduler).
 

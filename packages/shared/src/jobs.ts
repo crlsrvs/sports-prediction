@@ -14,6 +14,16 @@ export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];
 
 export const DEFAULT_QUEUE_NAME = 'sports-prediction';
 
+export const DEFAULT_JOB_OPTIONS = {
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 5000,
+  },
+  removeOnComplete: { count: 100 },
+  removeOnFail: { count: 50 },
+} as const;
+
 export const API_FOOTBALL_SOURCE_ID = 'source-api-football';
 export const FOOTBALL_DATA_SOURCE_ID = 'source-football-data';
 export const SEED_SOURCE_ID = 'source-seed';

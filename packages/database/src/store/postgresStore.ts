@@ -29,6 +29,7 @@ import type {
   DataMode,
   DataSourceRecord,
   EntityAliasRecord,
+  MatchFilter,
   PlayerAbsenceRecord,
   PredictionEvaluationFilter,
   PredictionEvaluationRecord,
@@ -311,10 +312,24 @@ export class PostgresStore implements AppStore {
     return team;
   }
 
-  async listMatches(): Promise<readonly Match[]> {
-    const result = await this.pool.query(
-      'SELECT * FROM matches ORDER BY scheduled_at ASC',
-    );
+  async listMatches(filter?: MatchFilter): Promise<readonly Match[]> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (filter?.status) {
+      values.push(filter.status);
+      conditions.push(`status = $${values.length}`);
+    }
+    if (filter?.since) {
+      values.push(filter.since);
+      conditions.push(`scheduled_at >= $${values.length}`);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    let query = `SELECT * FROM matches ${where} ORDER BY scheduled_at ASC`;
+    if (filter?.limit && filter.limit > 0) {
+      values.push(filter.limit);
+      query += ` LIMIT $${values.length}`;
+    }
+    const result = await this.pool.query(query, values);
     return result.rows.map((row) => mapMatch(row));
   }
 

@@ -43,6 +43,7 @@ El archivo `.env` vive en la raíz y **nunca se commitea** (está en `.gitignore
 | `STORE_ALLOW_MEMORY_FALLBACK` | `false` | Solo para demos: si `true`, cuando Postgres no responde se cae a memoria con un aviso en vez de fallar. Nunca en producción. |
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Cola BullMQ. Necesario para encolar y ejecutar jobs. |
 | `PORT` | `3000` | Puerto de la API. |
+| `ALLOWED_ORIGINS` | orígenes locales | Lista de orígenes CORS separados por comas. Sin la variable se permiten localhost y 127.0.0.1 en puertos 5173 y 3000; `.env.example` enumera localhost. En producción incluye el origen del frontend. `*` es una alternativa abierta. |
 | `API_FOOTBALL_KEY` | vacío | Clave de API-Football. Sin ella, la fuente aparece como `disabled` y los jobs de ingesta se marcan `skipped`. |
 | `API_FOOTBALL_SEASON` | `2024` | Temporada por defecto para `import-season` cuando no se pasa una explícita. El plan gratuito solo permite 2022–2024. |
 | `FOOTBALL_DATA_KEY` | vacío | Token de football-data.org. Con él, `scrape-source` sincroniza la temporada en curso (fixtures y resultados). Sin él, la fuente aparece `disabled`. |
@@ -52,7 +53,7 @@ El archivo `.env` vive en la raíz y **nunca se commitea** (está en `.gitignore
 
 ## Levantar el entorno de desarrollo
 
-Son tres procesos. Ábrelos en tres terminales (o usa `npm run dev`, que los lanza todos con `--workspaces`):
+Son tres procesos. Ábrelos en tres terminales: el script raíz `npm run dev` usa npm workspaces de forma secuencial y no es un lanzador concurrente para estos procesos de larga duración.
 
 ```bash
 npm run dev:api      # NestJS en http://localhost:3000, recarga con tsx watch
@@ -86,7 +87,7 @@ Al arrancar por primera vez verás un banner "Datos demo (seed)". Para trabajar 
 
 | Propósito | Comando |
 |---|---|
-| Todo en modo dev | `npm run dev` |
+| Todo en modo dev | Tres terminales: `npm run dev:api`, `npm run dev:worker`, `npm run dev:web` |
 | Solo API / worker / web | `npm run dev:api` · `npm run dev:worker` · `npm run dev:web` |
 | Typecheck de todos los workspaces | `npm run typecheck` |
 | Lint | `npm run lint` |

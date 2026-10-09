@@ -5,7 +5,7 @@
 - PostgreSQL es el sistema de registro. Driver `pg` directo, **sin ORM** (ADR 0002).
 - El esquema se versiona en SQL plano: `packages/database/migrations/NNN_nombre.sql` (fuera de `src/`, para que lo encuentre tanto el código fuente como `dist/`).
 - Las migraciones son idempotentes (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) y se ejecutan **todas, en orden, en cada arranque** de API y worker (`PostgresStore.migrate(pool)`). No hay tabla de control de versiones; la idempotencia es la garantía.
-- `createAppStore()` elige el store: sin `DATABASE_URL` → memoria sembrada (demo explícito); con `DATABASE_URL` alcanzable → Postgres; con `DATABASE_URL` inalcanzable → lanza `StoreConnectionError` (la API no arranca, el job del worker falla) salvo que `STORE_ALLOW_MEMORY_FALLBACK=true`, en cuyo caso cae a memoria avisando. El modo y el motivo se exponen en `GET /health`.
+- `createAppStore()` elige el store: sin `DATABASE_URL` → memoria sembrada (demo explícito); con `DATABASE_URL` alcanzable → Postgres; con `DATABASE_URL` inalcanzable → lanza `StoreConnectionError` (API y worker no arrancan) salvo que `STORE_ALLOW_MEMORY_FALLBACK=true`, en cuyo caso cae a memoria avisando. El modo y el motivo se exponen en `GET /health`.
 
 ## Tablas
 
@@ -28,7 +28,7 @@ Ids son texto legible: `sport-football`, `comp-pl`, `team-af-50`, `team-barcelon
 | `matches` | `id` | `sport_id`, `competition_id`, `season_id` (null hoy), `home_team_id`, `away_team_id`, `scheduled_at`, `venue_id`, `status`, `home_score`, `away_score`, `source_id`, `created_at`, `updated_at` |
 | `predictions` | `id` | `match_id`, `generated_at`, `data_cutoff_at`, `model_version`, `predicted_home`, `predicted_away`, `expected_home`, `expected_away`, `confidence`, `factors` (`JSONB`), `outcome_probabilities` (`JSONB`, nullable) |
 
-Un partido puede tener **muchas** predicciones (una por generación/modelo). `getLatestPrediction(matchId)` devuelve la más reciente por `generated_at`. Nunca borramos predicciones: reproducibilidad.
+Un partido puede tener **muchas** predicciones (una por generación/modelo). `getLatestPrediction(matchId)` devuelve la más reciente por `generated_at`. Las regeneraciones añaden predicciones y conservan las anteriores como historial. Se guardan salida, factores, versión y corte, pero no el `FeatureSnapshot` completo ni una copia del historial utilizado; la reproducción exacta sigue pendiente si los datos cambian.
 
 Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football-data.org), `hist-*` / `match-*` (seed). Un partido visto por los dos proveedores conserva el id y `source_id` del primero que lo creó.
 
@@ -62,18 +62,24 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football
 `packages/database/src/store/types.ts`. Es la frontera entre la app y la persistencia. Métodos por grupo:
 
 - **Catálogo**: `listSports`, `upsertSport`, `listCompetitions`, `upsertCompetition`, `listTeams`, `getTeam`, `upsertTeam`.
-- **Partidos**: `listMatches`, `getMatch`, `upsertMatch`.
+- **Partidos**: `listMatches(filter?: MatchFilter)` (filtra por `status`, `since`, `limit` en SQL parametrizado o en memoria), `getMatch`, `upsertMatch`.
 - **Predicciones**: `listPredictions`, `getLatestPrediction`, `savePrediction`.
 - **Fuentes y jobs**: `listSources`, `upsertSource`, `listScrapingJobs`, `addScrapingJob`.
 - **Entidades**: `listUnresolvedEntities`, `addUnresolvedEntity`, `resolveEntity`, `listEntityAliases`, `upsertEntityAlias`.
 - **RAW**: `saveRawRecord`, `listRawRecords`, `deleteRawRecordsOlderThan`.
 - **Backtests**: `saveBacktestRun`, `listBacktestRuns`.
+- **Evaluaciones**: `savePredictionEvaluation`, `listPredictionEvaluations`.
+- **Disponibilidad**: `upsertPlayerAbsences`, `listPlayerAbsences`, `upsertTeamLineups`, `listTeamLineups`.
 - **Meta**: `getDataMode`.
 
 Dos implementaciones, y las dos deben estar siempre al día:
 
 - `MemoryStore`: mapas en memoria; `MemoryStore.seeded()` carga `createSeedData()`. Se usa en tests de la API (`analysis.service.spec.ts`) y como fallback.
-- `PostgresStore`: `pg.Pool`; `migrate()`, `seedIfEmpty()` (siembra solo si `sports` está vacía).
+- `PostgresStore`: `pg.Pool`; `migrate()`, `seedIfEmpty()` (siembra solo si `matches` está vacía). API y worker reutilizan cada uno su propia instancia de `AppStore` para evitar fugas de conexiones en el pool de PostgreSQL.
+
+`MatchFilter` combina sus filtros con AND: `status` exige igualdad, `since` incluye partidos con `scheduledAt >= since` y un `limit` positivo restringe el resultado después de ordenar por fecha ascendente. Sin filtro devuelve todos los partidos. Filtrar en SQL reduce filas transferidas; no garantiza un índice ni elimina por sí solo un escaneo de tabla.
+
+En modo memoria los almacenes de API y worker son independientes: un job no actualiza la memoria de la API. Usa PostgreSQL para compartir datos entre procesos.
 
 ## Cómo añadir un campo o una tabla
 
@@ -85,7 +91,7 @@ Ejemplo real: añadir `outcome_probabilities` a `predictions` (migración 003).
 4. **MemoryStore**: normalmente no hay que tocarlo (guarda el objeto entero), salvo métodos nuevos.
 5. **Seed**: si el tipo es obligatorio, actualiza `seed.ts`.
 6. **Consumidores**: `analysis.service.ts`, `pipeline.ts`, web.
-7. `npm run typecheck && npm test`. Levanta la API contra Postgres y confirma que `migrate()` no falla.
+7. `npm run typecheck && npm run lint && npm test`. Levanta la API contra Postgres y confirma que `migrate()` no falla.
 
 Para una tabla nueva, además: tipo del registro en `types.ts`, métodos en la interfaz, implementación en ambos stores, export en `packages/database/src/index.ts`.
 

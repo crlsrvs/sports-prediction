@@ -15,8 +15,8 @@ Sports analysis and prediction platform that ingests data from multiple sources,
 | --- | --- |
 | Frontend | React, TypeScript (strict), Vite, TanStack Query, Recharts |
 | Backend API | NestJS, TypeScript (strict), REST |
-| Workers / jobs | NestJS workers, BullMQ, Redis |
-| Scraping | Playwright (Node/TypeScript) |
+| Workers / jobs | Node/TypeScript workers, BullMQ, Redis (NestJS for the API) |
+| Scraping | HTTP API adapters (`fetch`); Playwright (Node/TypeScript) planned for web adapters |
 | Database | PostgreSQL (system of record) |
 | Cache / queue | Redis + BullMQ |
 | Initial deploy | Frontend → Vercel; PostgreSQL → Neon; Redis → Upstash; API/workers → free-tier compatible host |
@@ -31,6 +31,7 @@ apps/
 packages/
   domain/       # Shared domain models
   prediction/   # Prediction Engine (replaceable)
+  features/     # Feature snapshots and fitted ratings
   scraping/     # Source adapters, fetchers, parsers
   normalization/
   database/
