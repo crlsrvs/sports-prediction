@@ -1,17 +1,10 @@
-import type { Competition, FeatureSnapshot, Match, Team } from './entities.js';
+import type { PredictionInputSnapshot } from './entities.js';
 
 /**
  * Inputs available to the Prediction Engine at a given data cutoff.
  * Callers must ensure features only reflect information available at `dataCutoffAt`.
  */
-export interface MatchContext {
-  readonly match: Match;
-  readonly competition: Competition;
-  readonly homeTeam: Team;
-  readonly awayTeam: Team;
-  readonly featureSnapshot: FeatureSnapshot;
-  readonly dataCutoffAt: Date;
-}
+export type MatchContext = PredictionInputSnapshot;
 
 export function hasMinimumPredictionData(context: MatchContext): boolean {
   const { match, homeTeam, awayTeam, competition, featureSnapshot } = context;

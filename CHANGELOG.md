@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Persisted prediction input snapshots (migration 007) in API and worker;
+  original analysis features and identities are retained, legacy forecasts are
+  identified, and retrospective calculations are labeled. PostgreSQL regression
+  tests run in CI. See ADR 0008 and `docs/ALPHA_READINESS.md`.
 - Monorepo foundation (`apps/web`, `apps/api`, `apps/worker`, shared packages).
 - Domain contracts, football-v1 prediction engine, normalization helpers.
 - Feature engine, seeded store (memory/Postgres), match analysis API, admin APIs.
@@ -97,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Historical rest and availability respect the exclusive prediction cutoff.
+- PostgreSQL date reads retain milliseconds; in-memory prediction reads/writes
+  isolate stored snapshots from external reference mutations.
 - Demo (seed) results no longer contaminate ratings or backtests once real data exists.
 - API/worker fail fast with `StoreConnectionError` when `DATABASE_URL` is set but
   unreachable instead of silently serving demo data; opt-in fallback via

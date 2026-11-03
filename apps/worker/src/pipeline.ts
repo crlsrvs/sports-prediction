@@ -684,6 +684,7 @@ async function generatePredictions(
       confidence: result.value.confidence,
       factors: result.value.factors,
       outcomeProbabilities: result.value.outcomeProbabilities,
+      inputSnapshot: context,
     });
     generated += 1;
   }

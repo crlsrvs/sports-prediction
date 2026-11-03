@@ -18,6 +18,7 @@ Léela en orden la primera vez; después úsala como referencia.
 
 ## Otros documentos que debes conocer
 
+- [`Preparación de la versión alfa`](../ALPHA_READINESS.md): bloqueos críticos, criterios verificables de terminado y registro compartido de avance para `0.1.0-alpha.1`.
 - [`AGENTS.md`](../../AGENTS.md): reglas operativas del proyecto (stack permitido, convenciones, verificación). Aplican a humanos y a agentes de IA por igual. Es la fuente de verdad cuando algo aquí parezca contradecirlo.
 - [`docs/PRD.md`](../PRD.md): el documento de producto. Define qué es el MVP, qué queda para V2 y por qué. Consúltalo antes de decidir qué se muestra al usuario final.
 - [`docs/adr/`](../adr/): decisiones de arquitectura con su contexto. Antes de introducir una librería o cambiar una pieza estructural, revisa si hay un ADR y, si no, escribe uno.

@@ -64,6 +64,7 @@ Both free tiers allow 10 requests/minute. See [docs/onboarding/03-datos-e-ingest
 
 ## Documentation
 
+- **Alpha release checklist and progress:** [`docs/ALPHA_READINESS.md`](./docs/ALPHA_READINESS.md).
 - **New here? Start with the [developer onboarding guide](./docs/onboarding/README.md)** (setup, architecture, data pipeline, prediction engine, API, database, workflow, glossary).
 - Product requirements: [`docs/PRD.md`](./docs/PRD.md).
 - Architectural decisions: [`docs/adr/`](./docs/adr/).

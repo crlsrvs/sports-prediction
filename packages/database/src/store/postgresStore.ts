@@ -16,6 +16,7 @@ import {
   type OutcomeProbabilities,
   type Prediction,
   type PredictionFactor,
+  type PredictionInputSnapshot,
   type Sport,
   type Team,
 } from '@sports-prediction/domain';
@@ -45,6 +46,11 @@ import type {
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 // src/store and dist/store both sit two levels under the package root.
 const migrationsDir = join(moduleDir, '../../migrations');
+
+// pg already returns Date for timestamptz; stringifying it loses milliseconds.
+function readDate(value: unknown): Date {
+  return value instanceof Date ? new Date(value.getTime()) : new Date(String(value));
+}
 
 function mapSport(row: Record<string, unknown>): Sport {
   return {
@@ -82,14 +88,14 @@ function mapMatch(row: Record<string, unknown>): Match {
     seasonId: null,
     homeTeamId: asTeamId(String(row['home_team_id'])),
     awayTeamId: asTeamId(String(row['away_team_id'])),
-    scheduledAt: new Date(String(row['scheduled_at'])),
+    scheduledAt: readDate(row['scheduled_at']),
     venueId: null,
     status: String(row['status']) as MatchStatus,
     homeScore: row['home_score'] == null ? null : Number(row['home_score']),
     awayScore: row['away_score'] == null ? null : Number(row['away_score']),
     sourceId: row['source_id'] == null ? null : asDataSourceId(String(row['source_id'])),
-    createdAt: new Date(String(row['created_at'])),
-    updatedAt: new Date(String(row['updated_at'])),
+    createdAt: readDate(row['created_at']),
+    updatedAt: readDate(row['updated_at']),
   };
 }
 
@@ -97,8 +103,8 @@ function mapPrediction(row: Record<string, unknown>): Prediction {
   return {
     id: asPredictionId(String(row['id'])),
     matchId: asMatchId(String(row['match_id'])),
-    generatedAt: new Date(String(row['generated_at'])),
-    dataCutoffAt: new Date(String(row['data_cutoff_at'])),
+    generatedAt: readDate(row['generated_at']),
+    dataCutoffAt: readDate(row['data_cutoff_at']),
     modelVersion: String(row['model_version']),
     predictedScore: {
       home: Number(row['predicted_home']),
@@ -112,6 +118,27 @@ function mapPrediction(row: Record<string, unknown>): Prediction {
     factors: (row['factors'] as PredictionFactor[]) ?? [],
     outcomeProbabilities:
       (row['outcome_probabilities'] as OutcomeProbabilities | null) ?? null,
+    inputSnapshot: restoreInputSnapshot(row['input_snapshot']),
+  };
+}
+
+/** PostgreSQL decodes JSONB, but nested dates still need their runtime types. */
+function restoreInputSnapshot(value: unknown): PredictionInputSnapshot | null {
+  if (value == null) return null;
+  const snapshot = value as PredictionInputSnapshot;
+  return {
+    ...snapshot,
+    dataCutoffAt: new Date(snapshot.dataCutoffAt),
+    match: {
+      ...snapshot.match,
+      scheduledAt: new Date(snapshot.match.scheduledAt),
+      createdAt: new Date(snapshot.match.createdAt),
+      updatedAt: new Date(snapshot.match.updatedAt),
+    },
+    featureSnapshot: {
+      ...snapshot.featureSnapshot,
+      dataCutoffAt: new Date(snapshot.featureSnapshot.dataCutoffAt),
+    },
   };
 }
 
@@ -120,7 +147,7 @@ function mapUnresolved(row: Record<string, unknown>): UnresolvedEntity {
     id: String(row['id']),
     incomingName: String(row['incoming_name']),
     sourceId: asDataSourceId(String(row['source_id'])),
-    createdAt: new Date(String(row['created_at'])),
+    createdAt: readDate(row['created_at']),
     provisionalTeamId:
       row['provisional_team_id'] == null
         ? null
@@ -134,10 +161,10 @@ function mapEvaluation(row: Record<string, unknown>): PredictionEvaluationRecord
     matchId: asMatchId(String(row['match_id'])),
     modelVersion: String(row['model_version']),
     competitionId: asCompetitionId(String(row['competition_id'])),
-    kickoffAt: new Date(String(row['kickoff_at'])),
-    generatedAt: new Date(String(row['generated_at'])),
+    kickoffAt: readDate(row['kickoff_at']),
+    generatedAt: readDate(row['generated_at']),
     generatedBeforeKickoff: Boolean(row['generated_before_kickoff']),
-    evaluatedAt: new Date(String(row['evaluated_at'])),
+    evaluatedAt: readDate(row['evaluated_at']),
     confidence: Number(row['confidence']),
     predictedHome: Number(row['predicted_home']),
     predictedAway: Number(row['predicted_away']),
@@ -177,7 +204,7 @@ function mapBacktestRun(row: Record<string, unknown>): BacktestRunRecord {
   return {
     id: String(row['id']),
     modelVersion: String(row['model_version']),
-    ranAt: new Date(String(row['ran_at'])),
+    ranAt: readDate(row['ran_at']),
     samples: Number(row['samples']),
     exactScoreRate: Number(row['exact_score_rate']),
     winnerRate: Number(row['winner_rate']),
@@ -208,6 +235,7 @@ export class PostgresStore implements AppStore {
       '004_unresolved_provisional_team.sql',
       '005_prediction_evaluations.sql',
       '006_evaluation_probabilities_and_availability.sql',
+      '007_prediction_input_snapshot.sql',
     ] as const;
     for (const file of migrationFiles) {
       const sql = readFileSync(join(migrationsDir, file), 'utf8');
@@ -398,16 +426,17 @@ export class PostgresStore implements AppStore {
       `INSERT INTO predictions (
          id, match_id, generated_at, data_cutoff_at, model_version,
          predicted_home, predicted_away, expected_home, expected_away, confidence, factors,
-         outcome_probabilities
+         outcome_probabilities, input_snapshot
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb
        )
        ON CONFLICT (id) DO UPDATE SET
          predicted_home = EXCLUDED.predicted_home,
          predicted_away = EXCLUDED.predicted_away,
          confidence = EXCLUDED.confidence,
          factors = EXCLUDED.factors,
-         outcome_probabilities = EXCLUDED.outcome_probabilities`,
+         outcome_probabilities = EXCLUDED.outcome_probabilities,
+         input_snapshot = EXCLUDED.input_snapshot`,
       [
         prediction.id,
         prediction.matchId,
@@ -423,6 +452,7 @@ export class PostgresStore implements AppStore {
         prediction.outcomeProbabilities
           ? JSON.stringify(prediction.outcomeProbabilities)
           : null,
+        prediction.inputSnapshot ? JSON.stringify(prediction.inputSnapshot) : null,
       ],
     );
     return prediction;
@@ -544,10 +574,10 @@ export class PostgresStore implements AppStore {
       active: Boolean(row['active']),
       health: String(row['health']) as SourceHealth,
       lastSuccessAt: row['last_success_at']
-        ? new Date(String(row['last_success_at']))
+        ? readDate(row['last_success_at'])
         : null,
       lastFailureAt: row['last_failure_at']
-        ? new Date(String(row['last_failure_at']))
+        ? readDate(row['last_failure_at'])
         : null,
       consecutiveFailures: Number(row['consecutive_failures']),
     }));
@@ -587,9 +617,9 @@ export class PostgresStore implements AppStore {
     return result.rows.map((row) => ({
       id: String(row['id']),
       sourceId: asDataSourceId(String(row['source_id'])),
-      startedAt: new Date(String(row['started_at'])),
+      startedAt: readDate(row['started_at']),
       finishedAt: row['finished_at']
-        ? new Date(String(row['finished_at']))
+        ? readDate(row['finished_at'])
         : null,
       status: String(row['status']) as ScrapingJobRecord['status'],
       recordsFound: Number(row['records_found']),
@@ -771,7 +801,7 @@ export class PostgresStore implements AppStore {
       id: String(row['id']),
       sourceId: asDataSourceId(String(row['source_id'])),
       url: String(row['url']),
-      fetchedAt: new Date(String(row['fetched_at'])),
+      fetchedAt: readDate(row['fetched_at']),
       statusCode: Number(row['status_code']),
       contentType:
         row['content_type'] == null ? null : String(row['content_type']),
@@ -801,7 +831,7 @@ export class PostgresStore implements AppStore {
         row['source_id'] == null
           ? null
           : asDataSourceId(String(row['source_id'])),
-      createdAt: new Date(String(row['created_at'])),
+      createdAt: readDate(row['created_at']),
     }));
   }
 
@@ -864,8 +894,8 @@ export class PostgresStore implements AppStore {
       teamId: asTeamId(String(row['team_id'])),
       playerName: String(row['player_name']),
       reason: String(row['reason']),
-      matchDay: new Date(String(row['match_day'])),
-      knownAt: new Date(String(row['known_at'])),
+      matchDay: readDate(row['match_day']),
+      knownAt: readDate(row['known_at']),
       sourceId: asDataSourceId(String(row['source_id'])),
     }));
   }
@@ -899,8 +929,8 @@ export class PostgresStore implements AppStore {
     return result.rows.map((row) => ({
       id: String(row['id']),
       teamId: asTeamId(String(row['team_id'])),
-      matchDay: new Date(String(row['match_day'])),
-      knownAt: new Date(String(row['known_at'])),
+      matchDay: readDate(row['match_day']),
+      knownAt: readDate(row['known_at']),
       sourceId: asDataSourceId(String(row['source_id'])),
       playerNames: parsePlayerNames(row['player_names']),
     }));

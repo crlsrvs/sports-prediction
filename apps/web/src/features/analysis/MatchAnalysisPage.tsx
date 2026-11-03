@@ -13,6 +13,7 @@ import {
 import { api } from '../../shared/api.js';
 import { formatForm, formatKickoff, metricWidth } from '../../shared/format.js';
 import styles from './MatchAnalysisPage.module.css';
+import { PredictionProvenance } from './PredictionProvenance.js';
 
 export function MatchAnalysisPage() {
   const params = useParams();
@@ -80,6 +81,11 @@ export function MatchAnalysisPage() {
             xG {analysis.prediction.expectedGoals.home.toFixed(2)} -{' '}
             {analysis.prediction.expectedGoals.away.toFixed(2)}
           </p>
+          <PredictionProvenance
+            hasSnapshot={Boolean(analysis.featureSnapshot)}
+            generatedAt={analysis.prediction.generatedAt}
+            kickoffAt={analysis.match.scheduledAt}
+          />
         </div>
       ) : (
         <p className={styles.message}>
@@ -87,63 +93,67 @@ export function MatchAnalysisPage() {
         </p>
       )}
 
-      <div className={styles.grid}>
-        <div>
-          <h2>Análisis</h2>
-          <p>
-            {analysis.homeTeam.canonicalName}
-            <br />
-            Forma: {formatForm(analysis.featureSnapshot?.homeForm ?? [])}
-          </p>
-          <p>
-            {analysis.awayTeam.canonicalName}
-            <br />
-            Forma: {formatForm(analysis.featureSnapshot?.awayForm ?? [])}
-          </p>
-        </div>
+      {analysis.featureSnapshot ? (
+        <>
+          <div className={styles.grid}>
+            <div>
+              <h2>Análisis</h2>
+              <p>
+                {analysis.homeTeam.canonicalName}
+                <br />
+                Forma: {formatForm(analysis.featureSnapshot?.homeForm ?? [])}
+              </p>
+              <p>
+                {analysis.awayTeam.canonicalName}
+                <br />
+                Forma: {formatForm(analysis.featureSnapshot?.awayForm ?? [])}
+              </p>
+            </div>
 
-        <div>
-          <h2>Comparación</h2>
-          <div className={styles.bars}>
-            {analysis.comparison.map((metric) => {
-              const max = Math.max(metric.homeValue, metric.awayValue, 0.1);
-              return (
-                <div key={metric.label} className={styles.barRow}>
-                  <span>{metric.label}</span>
-                  <div className={styles.barTrack}>
-                    <span
-                      className={styles.barHome}
-                      style={{ width: metricWidth(metric.homeValue, max) }}
-                    />
-                    <span
-                      className={styles.barAway}
-                      style={{ width: metricWidth(metric.awayValue, max) }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+            <div>
+              <h2>Comparación</h2>
+              <div className={styles.bars}>
+                {analysis.comparison.map((metric) => {
+                  const max = Math.max(metric.homeValue, metric.awayValue, 0.1);
+                  return (
+                    <div key={metric.label} className={styles.barRow}>
+                      <span>{metric.label}</span>
+                      <div className={styles.barTrack}>
+                        <span
+                          className={styles.barHome}
+                          style={{ width: metricWidth(metric.homeValue, max) }}
+                        />
+                        <span
+                          className={styles.barAway}
+                          style={{ width: metricWidth(metric.awayValue, max) }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className={styles.chartWrap}>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-            <XAxis dataKey="label" stroke="#b7c5d6" />
-            <YAxis stroke="#b7c5d6" />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="local" fill="#3dd6c6" name={analysis.homeTeam.canonicalName} />
-            <Bar
-              dataKey="visitante"
-              fill="#7aa2ff"
-              name={analysis.awayTeam.canonicalName}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+          <div className={styles.chartWrap}>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                <XAxis dataKey="label" stroke="#b7c5d6" />
+                <YAxis stroke="#b7c5d6" />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="local" fill="#3dd6c6" name={analysis.homeTeam.canonicalName} />
+                <Bar
+                  dataKey="visitante"
+                  fill="#7aa2ff"
+                  name={analysis.awayTeam.canonicalName}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      ) : null}
 
       <div>
         <h2>Factores principales</h2>

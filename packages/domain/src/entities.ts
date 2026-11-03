@@ -97,6 +97,17 @@ export interface Prediction {
   readonly factors: readonly PredictionFactor[];
   /** Null for models that do not produce a score distribution. */
   readonly outcomeProbabilities: OutcomeProbabilities | null;
+  /** Exact engine inputs. Null only for legacy predictions without provenance. */
+  readonly inputSnapshot: PredictionInputSnapshot | null;
+}
+
+export interface PredictionInputSnapshot {
+  readonly match: Match;
+  readonly competition: Competition;
+  readonly homeTeam: Team;
+  readonly awayTeam: Team;
+  readonly featureSnapshot: FeatureSnapshot;
+  readonly dataCutoffAt: Date;
 }
 
 /**

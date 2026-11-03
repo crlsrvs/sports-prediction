@@ -34,6 +34,35 @@ function match(
 }
 
 describe('buildFeatureSnapshot', () => {
+  it('excludes results at or after the cutoff from every historical feature', () => {
+    // Arrange
+    const home = asTeamId('home');
+    const away = asTeamId('away');
+    const prior = [{
+      match: match('prior', 'home', 'away', '2026-09-20T12:00:00Z'),
+      homeScore: 2,
+      awayScore: 1,
+    }];
+    const input = {
+      matchId: asMatchId('target'), homeTeamId: home, awayTeamId: away,
+      matchScheduledAt: new Date('2026-10-02T14:00:00Z'),
+      dataCutoffAt: new Date('2026-09-25T12:00:00Z'),
+      history: prior,
+    };
+
+    // Act
+    const baseline = buildFeatureSnapshot(input);
+    const withFuture = buildFeatureSnapshot({ ...input, history: [...prior,
+      { match: match('at-cutoff', 'home', 'away', '2026-09-25T12:00:00Z'), homeScore: 9, awayScore: 8 },
+      { match: match('later', 'away', 'home', '2026-10-01T12:00:00Z'), homeScore: 7, awayScore: 6 },
+    ] });
+
+    // Assert
+    expect(withFuture).toEqual(baseline);
+    expect(withFuture.restDaysHome).toBe(12);
+    expect(withFuture.restDaysAway).toBe(12);
+  });
+
   it('uses only history before the data cutoff', () => {
     // Arrange
     const home = asTeamId('home');

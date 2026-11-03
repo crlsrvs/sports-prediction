@@ -93,7 +93,7 @@ export function availabilityAdjustments(input: {
 
 function wasKnownInTime(knownAt: Date, kickoffAt: Date, dataCutoffAt: Date): boolean {
   return (
-    knownAt.getTime() <= dataCutoffAt.getTime() && knownAt.getTime() < kickoffAt.getTime()
+    knownAt.getTime() < dataCutoffAt.getTime() && knownAt.getTime() < kickoffAt.getTime()
   );
 }
 
