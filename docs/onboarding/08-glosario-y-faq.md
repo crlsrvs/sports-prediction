@@ -14,7 +14,7 @@
 
 **MatchCard.** DTO de una tarjeta del dashboard: partido, equipos, competición, forma reciente, última predicción.
 
-**MatchAnalysis.** DTO de la página de análisis: lo anterior más snapshot de features, comparación, evaluación y motivo de no disponibilidad.
+**MatchAnalysis.** DTO de la página de análisis: lo anterior más snapshot de features, comparación, evaluación y motivo de no disponibilidad. Para predicciones guardadas utiliza sus features originales; en registros antiguos sin snapshot, las features son `null` y la comparación está vacía.
 
 **RAW.** Payload crudo de una respuesta externa, guardado tal cual con checksum. Temporal (30 días).
 
@@ -22,9 +22,11 @@
 
 ### Modelado
 
-**dataCutoffAt.** Instante hasta el cual el modelo puede "ver" datos. Todo lo posterior es futuro y está prohibido. 5 min antes del kickoff en producción, 1 h antes en backtest.
+**dataCutoffAt.** Límite exclusivo de los datos admitidos: los hechos en ese instante o posteriores quedan fuera. Al generar se usa `min(ahora, kickoff − 5 min)`; en backtest, `kickoff − 1 h`.
 
 **FeatureSnapshot.** Conjunto de variables calculadas para un partido a un corte dado: forma, promedios, descanso, completitud, ratings.
+
+**PredictionInputSnapshot.** Contexto completo recibido por el motor, guardado con cada nueva predicción: partido, competición, equipos, features y corte. Permite repetir el cálculo sin usar el historial actual. `null` en predicciones anteriores sin datos originales conservados.
 
 **Forma reciente.** Últimos 5 resultados de un equipo como `W`/`D`/`L`.
 
@@ -46,7 +48,7 @@
 
 **Resultado implícito / 1X2.** Local gana, empate o visitante gana. `outcomeProbabilities` guarda las tres probabilidades.
 
-**Confianza.** Probabilidad del resultado predicho, en porcentaje. Si dice 60 %, el modelo cree que acertará el ganador 6 de cada 10 veces. Está **calibrada**: en backtest, cuando dice 60 % acierta ~60 %.
+**Confianza.** En v2/v3, probabilidad estimada del desenlace más probable (local, empate o visitante), expresada en porcentaje y acotada por el motor. No es la probabilidad del marcador exacto ni un porcentaje de acierto demostrado. Su calibración requiere evaluación empírica del candidato.
 
 **Marcador más probable consistente.** Entre todos los marcadores compatibles con el resultado más probable, el de mayor probabilidad. Evita mostrar "1-1" cuando el modelo cree que gana el local.
 

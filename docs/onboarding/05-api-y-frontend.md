@@ -36,11 +36,11 @@ Cada `MatchCard` lleva equipos, competición, forma reciente y la última predic
 #### Lógica de `GET /matches/:id/analysis`
 
 1. Carga partido, equipos y competición (404 si falta algo).
-2. `dataCutoffAt = min(ahora, kickoff − 5 min)`.
-3. Historial → ratings Dixon-Coles → `FeatureSnapshot`.
-4. Si no hay predicción guardada, predice con el modelo por defecto y la **persiste**. Si el motor devuelve error, `prediction: null` y `unavailableReason` con texto en español.
+2. Consulta la predicción guardada. Si tiene `inputSnapshot`, utiliza sus features e identidades originales; no las recalcula con el historial actual. Si es un registro anterior sin snapshot, devuelve `featureSnapshot: null` y comparación vacía, conservando la salida y los factores.
+3. Solo si no hay predicción: `dataCutoffAt = min(ahora, kickoff − 5 min)`; historial → ratings Dixon-Coles → `FeatureSnapshot`.
+4. Predice con el modelo por defecto y **persiste** la salida junto al contexto completo en `inputSnapshot`. Si el motor devuelve error, `prediction: null` y `unavailableReason` con texto en español.
 5. Si el partido terminó, calcula `evaluation` (exacto, ganador, Brier, log loss).
-6. `comparison`: ataque/defensa (ajustados por rival si hay ratings), forma reciente, localía.
+6. `comparison`: ataque/defensa (ajustados por rival si hay ratings), forma reciente, localía, siempre a partir del snapshot utilizado en el análisis. La web avisa si falta el snapshot original o si el cálculo es retrospectivo.
 
 Nota: la respuesta incluye `prediction.outcomeProbabilities`. La página pública no las renderiza (PRD: 1X2 es V2); si se quiere cumplir también a nivel de API, habría que omitirlas en un DTO público.
 

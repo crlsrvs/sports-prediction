@@ -18,7 +18,7 @@ type PredictionUnavailableReason =
   | 'invalid_cutoff';        // el snapshot usa datos posteriores al corte del contexto
 ```
 
-`PredictionOutput` es `Prediction` sin `id`/`matchId`/fechas: marcador, goles esperados, confianza, factores, `modelVersion`, probabilidades 1X2.
+`PredictionOutput` contiene marcador, goles esperados, confianza, factores, `modelVersion` y probabilidades 1X2. API y worker añaden identificadores, fechas e `inputSnapshot` al persistir la predicción.
 
 Los motores viven en `packages/prediction/src/footballV{1,2,3}.ts` y se registran en `engine.ts`:
 
@@ -29,7 +29,13 @@ DEFAULT_MODEL_VERSION;      // 'football-v3'
 predictionEngine;           // el default, usado por API y worker
 ```
 
-Cambiar el modelo en producción es cambiar una constante. Los modelos viejos se conservan para comparar en backtesting.
+`DEFAULT_MODEL_VERSION` selecciona el motor por defecto. Cada versión identifica lógica y constantes inmutables: cualquier cambio de comportamiento del motor requiere una versión nueva y conservar la anterior para reproducir predicciones guardadas y comparar backtests. Ver [ADR 0008](../adr/0008-prediction-input-snapshots.md).
+
+### Predicciones guardadas
+
+Cada nueva predicción conserva `inputSnapshot`, con el contexto y las features exactas que recibió el motor. El análisis consulta ese snapshot, no reconstruye sus comparaciones con datos actuales. Para repetir el cálculo: `getPredictionEngine(prediction.modelVersion).predict(prediction.inputSnapshot, prediction.inputSnapshot.featureSnapshot)`, comprobando primero que `inputSnapshot` no sea `null`.
+
+Los registros antiguos sin snapshot mantienen sus resultados y factores, pero no son reproducibles. Un cálculo generado al inicio o después del inicio del encuentro se presenta como retrospectivo; un corte histórico no demuestra que se hubiera pronosticado antes del partido. La política de actualización automática y selección para evaluación sigue pendiente en ALFA-02.
 
 ## De dónde salen las features
 
@@ -64,6 +70,8 @@ buildFinishedHistory(matches)          → FinishedMatchResult[] ordenado, sin s
 - **Backtest**: `kickoff − 1 h`, simulando que predecimos justo antes del partido sin conocerlo.
 
 El motor rechaza con `invalid_cutoff` cualquier snapshot cuyo `dataCutoffAt` sea posterior al del contexto. Esto es una red de seguridad contra fugas de información.
+
+El corte es exclusivo: resultados, bajas y alineaciones conocidos exactamente en el corte o después de él quedan fuera. El descanso también utiliza únicamente resultados anteriores al corte.
 
 ## Los tres modelos
 
@@ -146,9 +154,11 @@ Optimización importante: `RatingsCache` ajusta Dixon-Coles **una vez por corte 
 
 ### Cómo leer la calibración
 
-Si en el tramo "70–80 %" la confianza media es 0.74 y el acierto observado 0.75, el modelo está calibrado: cuando dice 74 %, acierta 74 % de las veces. v1 decía 95 % y acertaba 34 %. v3 está dentro de ±4 puntos en todos los tramos con muestra suficiente.
+Si en el tramo "70–80 %" la confianza media es 0.74 y el acierto observado 0.75, ambos valores son cercanos en esa muestra. La calibración debe medirse para cada candidato y periodo; no se deduce de usar Dixon–Coles ni garantiza comportamiento futuro.
 
 ### Resultados de referencia (octubre 2026, 2 881 partidos)
+
+Valores históricos conservados como referencia. No se revalidaron en el cierre de ALFA-01 y no acreditan la precisión del candidato actual. ALFA-06 exige registrar una ejecución reproducible con commit, periodo, muestra y comparaciones.
 
 | Modelo | Ganador | Exacto | Brier | Log loss |
 |---|---|---|---|---|
