@@ -7,10 +7,12 @@ Qué se ejecuta en cada PR, cómo se empaquetan la API y el worker, y cómo se d
 `.github/workflows/ci.yml` corre en cada `pull_request` y en cada push a `main`:
 
 1. `npm ci` con Node de `.nvmrc` (22).
-2. `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` — exactamente el bucle de verificación de `AGENTS.md`. Si pasa en tu máquina, pasa en CI.
+2. `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` — el bucle de verificación de `AGENTS.md`. El job levanta PostgreSQL 16 y configura `TEST_DATABASE_URL` para ejecutar también las pruebas de migración y snapshots. Cada suite SQL usa un esquema aislado. Pasar localmente no sustituye comprobar CI sobre el commit candidato.
 3. Construye las imágenes Docker de `api` y `worker` (sin publicarlas) para que un cambio en dependencias o en el `Dockerfile` no rompa el despliegue por sorpresa.
 
 Ejecuciones concurrentes sobre la misma rama se cancelan entre sí. No hay despliegue automático desde CI: Vercel y Render se enganchan directamente al repositorio.
+
+Un push a una rama de funcionalidad sin PR no dispara este workflow. Las pruebas SQL locales solo se ejecutan si se configura `TEST_DATABASE_URL` hacia una base de pruebas; sin ella se omiten. No utilizan `DATABASE_URL`. Ver [evidencia de ALFA-01](../alpha-evidence/ALFA-01.md) para reproducirlas y distinguir validación local de despliegue.
 
 ## Cómo se ejecutan la API y el worker en producción
 

@@ -119,6 +119,10 @@ export function buildFeatureSnapshot(input: {
     history,
   } = input;
 
+  const priorHistory = history.filter(
+    (item) => item.match.scheduledAt.getTime() < dataCutoffAt.getTime(),
+  );
+
   const homeForm = recentForm(homeTeamId, history, dataCutoffAt);
   const awayForm = recentForm(awayTeamId, history, dataCutoffAt);
   const homeAttack = averageGoalsFor(homeTeamId, history, dataCutoffAt, 'attack');
@@ -145,8 +149,8 @@ export function buildFeatureSnapshot(input: {
     awayDefense,
     homeStrength,
     awayStrength,
-    restDaysHome: restDays(homeTeamId, history, matchScheduledAt),
-    restDaysAway: restDays(awayTeamId, history, matchScheduledAt),
+    restDaysHome: restDays(homeTeamId, priorHistory, matchScheduledAt),
+    restDaysAway: restDays(awayTeamId, priorHistory, matchScheduledAt),
     injuryImpactHome: input.injuryImpactHome ?? 0,
     injuryImpactAway: input.injuryImpactAway ?? 0,
     squadChangeHome: input.squadChangeHome ?? 0,

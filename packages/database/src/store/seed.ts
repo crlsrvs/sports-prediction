@@ -306,6 +306,7 @@ export function createSeedData(): SeedData {
       },
     ],
     outcomeProbabilities: null,
+    inputSnapshot: null,
   };
 
   return {

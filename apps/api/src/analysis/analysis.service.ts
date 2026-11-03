@@ -208,49 +208,52 @@ export class AnalysisService {
       throw new NotFoundException('Competición no encontrada');
     }
 
-    const dataCutoffAt = new Date(
-      Math.min(Date.now(), match.scheduledAt.getTime() - 5 * 60 * 1000),
-    );
-
-    const [history, availability] = await Promise.all([
-      preload?.history ?? this.loadHistory(),
-      preload?.availability ?? this.loadAvailability(),
-    ]);
-    const ratings =
-      preload?.ratingsCache?.fitFor(dataCutoffAt) ??
-      fitDixonColes({ history, cutoffAt: dataCutoffAt });
-    const featureSnapshot = buildFeatureSnapshot({
-      matchId: match.id,
-      homeTeamId: match.homeTeamId,
-      awayTeamId: match.awayTeamId,
-      matchScheduledAt: match.scheduledAt,
-      dataCutoffAt,
-      history,
-      ratings: ratings.matchRatings(match.homeTeamId, match.awayTeamId),
-      ...availabilityAdjustments({
-        homeTeamId: String(match.homeTeamId),
-        awayTeamId: String(match.awayTeamId),
-        kickoffAt: match.scheduledAt,
-        dataCutoffAt,
-        ...availability,
-      }),
-    });
-
-    const context: MatchContext = {
-      match,
-      competition,
-      homeTeam,
-      awayTeam,
-      featureSnapshot,
-      dataCutoffAt,
-    };
-
     let prediction =
       preload?.latestPredictionsById?.get(String(match.id)) ??
       (await this.store.getLatestPrediction(match.id));
+    let featureSnapshot: FeatureSnapshot | null =
+      prediction?.inputSnapshot?.featureSnapshot ?? null;
     let unavailableReason: string | null = null;
 
+    // Legacy rows keep their result, but cannot acquire invented provenance.
     if (!prediction) {
+      const dataCutoffAt = new Date(
+        Math.min(Date.now(), match.scheduledAt.getTime() - 5 * 60 * 1000),
+      );
+
+      const [history, availability] = await Promise.all([
+        preload?.history ?? this.loadHistory(),
+        preload?.availability ?? this.loadAvailability(),
+      ]);
+      const ratings =
+        preload?.ratingsCache?.fitFor(dataCutoffAt) ??
+        fitDixonColes({ history, cutoffAt: dataCutoffAt });
+      featureSnapshot = buildFeatureSnapshot({
+        matchId: match.id,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId,
+        matchScheduledAt: match.scheduledAt,
+        dataCutoffAt,
+        history,
+        ratings: ratings.matchRatings(match.homeTeamId, match.awayTeamId),
+        ...availabilityAdjustments({
+          homeTeamId: String(match.homeTeamId),
+          awayTeamId: String(match.awayTeamId),
+          kickoffAt: match.scheduledAt,
+          dataCutoffAt,
+          ...availability,
+        }),
+      });
+
+      const context: MatchContext = {
+        match,
+        competition,
+        homeTeam,
+        awayTeam,
+        featureSnapshot,
+        dataCutoffAt,
+      };
+
       const generated = predictionEngine.predict(context, featureSnapshot);
       if (!generated.ok) {
         unavailableReason = describeUnavailable(generated.error);
@@ -266,6 +269,7 @@ export class AnalysisService {
           confidence: generated.value.confidence,
           factors: generated.value.factors,
           outcomeProbabilities: generated.value.outcomeProbabilities,
+          inputSnapshot: context,
         });
       }
     }
@@ -285,9 +289,9 @@ export class AnalysisService {
 
     return {
       match,
-      competition,
-      homeTeam,
-      awayTeam,
+      competition: prediction?.inputSnapshot?.competition ?? competition,
+      homeTeam: prediction?.inputSnapshot?.homeTeam ?? homeTeam,
+      awayTeam: prediction?.inputSnapshot?.awayTeam ?? awayTeam,
       featureSnapshot,
       prediction,
       unavailableReason,
@@ -389,6 +393,7 @@ export class AnalysisService {
         confidence: result.value.confidence,
         factors: result.value.factors,
         outcomeProbabilities: result.value.outcomeProbabilities,
+        inputSnapshot: { match, competition, homeTeam, awayTeam, featureSnapshot, dataCutoffAt },
       });
       regenerated += 1;
     }

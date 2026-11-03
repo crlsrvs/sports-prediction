@@ -130,14 +130,14 @@ export class MemoryStore implements AppStore {
   }
 
   async listPredictions(): Promise<readonly Prediction[]> {
-    return [...this.predictions].sort(
+    return structuredClone(this.predictions).sort(
       (a, b) => b.generatedAt.getTime() - a.generatedAt.getTime(),
     );
   }
 
   async getLatestPrediction(matchId: MatchId | string): Promise<Prediction | null> {
     const id = String(matchId);
-    return (
+    return structuredClone(
       this.predictions
         .filter((item) => item.matchId === id)
         .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime())[0] ??
@@ -147,14 +147,14 @@ export class MemoryStore implements AppStore {
 
   async savePrediction(prediction: Prediction): Promise<Prediction> {
     const withId: Prediction = {
-      ...prediction,
+      ...structuredClone(prediction),
       id: prediction.id || asPredictionId(`pred-${crypto.randomUUID()}`),
     };
     this.predictions = [
       withId,
       ...this.predictions.filter((item) => item.id !== withId.id),
     ];
-    return withId;
+    return structuredClone(withId);
   }
 
   async listSources(): Promise<readonly DataSourceRecord[]> {

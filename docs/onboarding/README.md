@@ -18,6 +18,7 @@ Léela en orden la primera vez; después úsala como referencia.
 
 ## Otros documentos que debes conocer
 
+- [`Preparación de la versión alfa`](../ALPHA_READINESS.md): bloqueos críticos, criterios verificables de terminado y registro compartido de avance para `0.1.0-alpha.1`.
 - [`AGENTS.md`](../../AGENTS.md): reglas operativas del proyecto (stack permitido, convenciones, verificación). Aplican a humanos y a agentes de IA por igual. Es la fuente de verdad cuando algo aquí parezca contradecirlo.
 - [`docs/PRD.md`](../PRD.md): el documento de producto. Define qué es el MVP, qué queda para V2 y por qué. Consúltalo antes de decidir qué se muestra al usuario final.
 - [`docs/adr/`](../adr/): decisiones de arquitectura con su contexto. Antes de introducir una librería o cambiar una pieza estructural, revisa si hay un ADR y, si no, escribe uno.
@@ -26,9 +27,13 @@ Léela en orden la primera vez; después úsala como referencia.
 
 ## Estado actual del proyecto (resumen de una página)
 
+Referencia: 2026-11-03, rama `codex/alpha-prediction-provenance`. **Alfa todavía no publicable**: ALFA-01 cerrado localmente; ALFA-02 a ALFA-06 pendientes. El detalle vigente y sus evidencias están en [Preparación de la versión alfa](../ALPHA_READINESS.md).
+
 - **Producto**: dashboard de "Partidos de hoy", página de análisis por partido (marcador estimado, goles esperados, factores explicativos, comparación de equipos) y panel Admin interno. Idioma: español.
 - **Deporte y competiciones visibles**: fútbol; UEFA Champions League, Premier League y La Liga.
 - **Datos reales**: historial 2022/23–2024/25 desde API-Football (plan gratuito) y la temporada en curso (fixtures y resultados) desde football-data.org. Además de las tres ligas visibles, se ingieren Bundesliga, Serie A y Ligue 1 como *ligas de soporte*: alimentan el modelo pero no aparecen en el producto.
 - **Modelo por defecto**: `football-v3` (Dixon-Coles). Se conservan `football-v1` y `football-v2` para comparar en backtesting.
-- **Calidad medida** (backtest walk-forward sobre ~2 900 partidos reales): acierto de ganador 53.9 %, Brier 0.582, log loss 0.978, confianza calibrada (±4 puntos entre confianza declarada y acierto observado).
+- **Trazabilidad**: cada nueva predicción conserva el contexto completo del motor; el análisis usa sus features originales. Los registros anteriores sin snapshot mantienen su salida, pero no una comparación reconstruida atribuida como original. Ver [ADR 0008](../adr/0008-prediction-input-snapshots.md).
+- **Validación local de ALFA-01**: typecheck, lint, build y 118 tests aprobados, incluidas tres comprobaciones SQL con PostgreSQL temporal. No acredita aún el flujo integral con Redis, proveedores reales o un despliegue.
+- **Calidad del modelo**: existen [resultados históricos de referencia](./04-motor-de-prediccion.md#resultados-de-referencia-octubre-2026-2-881-partidos), pero no se revalidaron para este candidato. Medición reproducible y evaluación real pendientes en ALFA-06.
 - **Fuera del MVP**: 1X2 visible al usuario final, cuotas de apuestas, cuentas de usuario, predicciones en vivo, explicaciones generadas por LLM.

@@ -2,7 +2,7 @@
 
 ## La idea en una frase
 
-Ingerimos resultados de fuentes externas, los normalizamos a un modelo de dominio común, calculamos *features* respetando un corte temporal, y un motor matemático reemplazable produce un marcador estimado con factores explicativos. Todo es reproducible y nada depende de un proveedor concreto.
+Ingerimos resultados de fuentes externas, los normalizamos a un modelo de dominio común, calculamos *features* respetando un corte temporal, y un motor matemático reemplazable produce un marcador estimado con factores explicativos. Las nuevas predicciones conservan el contexto necesario para repetir el cálculo con su versión del motor; las antiguas sin snapshot no son reproducibles. El dominio y el motor no dependen de un proveedor concreto.
 
 ## Pipeline
 
@@ -167,8 +167,11 @@ interface Prediction {
   confidence: number;                // 0–100, = P(resultado predicho) en v2/v3
   factors: PredictionFactor[];       // explicación determinista, ordenada por impacto
   outcomeProbabilities: { home; draw; away } | null;  // null en v1
+  inputSnapshot: PredictionInputSnapshot | null;    // contexto exacto; null en legado
 }
 ```
+
+`PredictionInputSnapshot` contiene partido, competición, equipos, features (incluidos ratings) y `dataCutoffAt`. El análisis muestra esas features originales; solo el estado y resultado del partido se consultan como datos actuales. Ver [ADR 0008](../adr/0008-prediction-input-snapshots.md).
 
 ### `FeatureSnapshot` (lo que entra al motor)
 

@@ -26,9 +26,13 @@ Ids son texto legible: `sport-football`, `comp-pl`, `team-af-50`, `team-barcelon
 | Tabla | Clave | Columnas relevantes |
 |---|---|---|
 | `matches` | `id` | `sport_id`, `competition_id`, `season_id` (null hoy), `home_team_id`, `away_team_id`, `scheduled_at`, `venue_id`, `status`, `home_score`, `away_score`, `source_id`, `created_at`, `updated_at` |
-| `predictions` | `id` | `match_id`, `generated_at`, `data_cutoff_at`, `model_version`, `predicted_home`, `predicted_away`, `expected_home`, `expected_away`, `confidence`, `factors` (`JSONB`), `outcome_probabilities` (`JSONB`, nullable) |
+| `predictions` | `id` | `match_id`, `generated_at`, `data_cutoff_at`, `model_version`, `predicted_home`, `predicted_away`, `expected_home`, `expected_away`, `confidence`, `factors` (`JSONB`), `outcome_probabilities` e `input_snapshot` (`JSONB`, nullable) |
 
-Un partido puede tener **muchas** predicciones (una por generación/modelo). `getLatestPrediction(matchId)` devuelve la más reciente por `generated_at`. Las regeneraciones añaden predicciones y conservan las anteriores como historial. Se guardan salida, factores, versión y corte, pero no el `FeatureSnapshot` completo ni una copia del historial utilizado; la reproducción exacta sigue pendiente si los datos cambian.
+Un partido puede tener **muchas** predicciones (una por generación/modelo). `getLatestPrediction(matchId)` devuelve la más reciente por `generated_at`. Las regeneraciones añaden predicciones y conservan las anteriores como historial. La actualización automática y la selección de la predicción previa al inicio siguen pendientes en ALFA-02.
+
+Desde la migración 007, cada nueva predicción guarda `input_snapshot`: contexto completo del motor con partido, competición, equipos, `FeatureSnapshot`, ratings y corte. Esto permite repetir el cálculo con su versión del motor sin consultar el historial actual. El análisis usa los datos guardados; los registros anteriores mantienen `null`, sin backfill inventado. No se guarda una copia íntegra del historial ni se extiende la retención RAW. Ver [ADR 0008](../adr/0008-prediction-input-snapshots.md).
+
+PostgresStore restaura las fechas anidadas del JSON a `Date` y conserva los milisegundos al leer timestamps SQL. MemoryStore copia las predicciones al escribir y leer para evitar mutaciones por referencias compartidas.
 
 Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football-data.org), `hist-*` / `match-*` (seed). Un partido visto por los dos proveedores conserva el id y `source_id` del primero que lo creó.
 
@@ -56,6 +60,7 @@ Ids de partido: `match-af-<fixtureId>` (API-Football), `match-fd-<id>` (football
 | `004_unresolved_provisional_team.sql` | `unresolved_entities.provisional_team_id`, índices en `matches(home_team_id)` / `matches(away_team_id)` |
 | `005_prediction_evaluations.sql` | tabla `prediction_evaluations` (evaluación persistida de la temporada en vivo) |
 | `006_evaluation_probabilities_and_availability.sql` | `prediction_evaluations.outcome_probabilities`, tablas `player_absences` y `team_lineups` |
+| `007_prediction_input_snapshot.sql` | `predictions.input_snapshot`, nullable y sin backfill |
 
 ## `AppStore`
 
@@ -86,7 +91,7 @@ En modo memoria los almacenes de API y worker son independientes: un job no actu
 Ejemplo real: añadir `outcome_probabilities` a `predictions` (migración 003).
 
 1. **Dominio**: añade el campo al tipo (`Prediction.outcomeProbabilities`). El typecheck te mostrará cada sitio que construye el objeto.
-2. **Migración**: `007_<nombre>.sql` idempotente. Añádela a la lista `migrationFiles` en `PostgresStore.migrate`.
+2. **Migración**: siguiente número disponible (`008_<nombre>.sql` tras la 007), idempotente. Añádela a la lista `migrationFiles` en `PostgresStore.migrate`.
 3. **PostgresStore**: `INSERT`/`UPDATE` con la columna nueva y el `map*` que la lee (`row['outcome_probabilities']`).
 4. **MemoryStore**: normalmente no hay que tocarlo (guarda el objeto entero), salvo métodos nuevos.
 5. **Seed**: si el tipo es obligatorio, actualiza `seed.ts`.

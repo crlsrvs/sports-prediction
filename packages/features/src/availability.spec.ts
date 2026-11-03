@@ -5,6 +5,25 @@ const kickoff = new Date('2026-10-09T19:00:00Z');
 const cutoff = new Date('2026-10-09T12:00:00Z');
 
 describe('teamAvailability', () => {
+  it('treats the cutoff as exclusive for both absences and previous lineups', () => {
+    // Arrange
+    const knownBefore = new Date(cutoff.getTime() - 1);
+    const previousMatch = new Date('2026-10-01T19:00:00Z');
+    const absence = { teamId: 'team-a', playerName: 'Ana', matchDay: kickoff, knownAt: knownBefore };
+
+    // Act
+    const result = teamAvailability({
+      teamId: 'team-a', kickoffAt: kickoff, dataCutoffAt: cutoff,
+      absences: [absence, { ...absence, playerName: 'Bea', knownAt: cutoff }],
+      lineups: [{ teamId: 'team-a', matchDay: previousMatch, knownAt: cutoff, playerNames: ['Ana'] }],
+    });
+
+    // Assert
+    expect(result.absentPlayers).toEqual(['ana']);
+    expect(result.injuryImpact).toBe(-0.06);
+    expect(result.squadChange).toBe(0);
+  });
+
   it('ignores absences learned after the cutoff', () => {
     // Arrange
     const late = {

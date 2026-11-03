@@ -2,13 +2,24 @@
 
 Plataforma web de análisis y predicción deportiva. El MVP cubre fútbol (Champions League, Premier League y La Liga) con un motor matemático desacoplado y explicable.
 
+## Estado del proyecto — 2026-11-03
+
+**En preparación para `0.1.0-alpha.1`; todavía no lista para publicar.** Están implementados dashboard, análisis, administración, ingesta con dos proveedores, predicción Dixon–Coles, backtesting y evaluación de resultados.
+
+- **ALFA-01 completado localmente:** API y worker guardan el contexto exacto de cada nueva predicción (migración 007); el análisis conserva sus features originales. Las predicciones anteriores sin snapshot y las reconstrucciones retrospectivas se identifican explícitamente.
+- **Última validación:** typecheck, lint, build y 118 tests aprobados, incluidas tres comprobaciones con PostgreSQL temporal. [Evidencia y límites de esa ejecución](./docs/alpha-evidence/ALFA-01.md).
+- **Pendiente:** actualización automática y conservación de pronósticos previos al inicio (ALFA-02), fallos/reintentos y vigencia de ingesta (ALFA-03), claridad de la información y revisión móvil (ALFA-04), protección de producción (ALFA-05) y validación integral/despliegue (ALFA-06).
+- **Sin acreditar todavía:** flujo completo con Redis y proveedores reales, operación programada del candidato desplegado y precisión del modelo para esta versión. Los resultados históricos documentados no sustituyen esa validación.
+
+El [plan del alfa](./docs/ALPHA_READINESS.md) contiene los criterios de terminado y el registro de avance. Este estado corresponde a la rama `codex/alpha-prediction-provenance` (implementación en `b95b235`); no acredita integración en `main` ni despliegue.
+
 ## Stack
 
 - **Web:** React, TypeScript, Vite, TanStack Query, Recharts
 - **API:** NestJS (REST)
 - **Workers:** BullMQ + Redis
 - **DB:** PostgreSQL
-- **Scraping:** Playwright (cuando se activen adapters web)
+- **Ingesta:** adapters HTTP con `fetch` para API-Football y football-data.org; Playwright previsto para futuros adapters web
 
 ## Monorepo
 
@@ -64,6 +75,7 @@ Both free tiers allow 10 requests/minute. See [docs/onboarding/03-datos-e-ingest
 
 ## Documentation
 
+- **Alpha release checklist and progress:** [`docs/ALPHA_READINESS.md`](./docs/ALPHA_READINESS.md).
 - **New here? Start with the [developer onboarding guide](./docs/onboarding/README.md)** (setup, architecture, data pipeline, prediction engine, API, database, workflow, glossary).
 - Product requirements: [`docs/PRD.md`](./docs/PRD.md).
 - Architectural decisions: [`docs/adr/`](./docs/adr/).
